@@ -6,7 +6,9 @@ import (
 
 	"github.com/taasezer/TaaNOS/config"
 	appctx "github.com/taasezer/TaaNOS/internal/context"
+	"github.com/taasezer/TaaNOS/internal/executor"
 	"github.com/taasezer/TaaNOS/internal/intent"
+	"github.com/taasezer/TaaNOS/internal/interaction"
 	"github.com/taasezer/TaaNOS/internal/logger"
 	osutil "github.com/taasezer/TaaNOS/internal/os"
 	"github.com/taasezer/TaaNOS/internal/planner"
@@ -289,25 +291,69 @@ func (p *Pipeline) Run(input RawInput) error {
 		fmt.Printf("\n⚠️  Validation warnings overridden with --force\n")
 	}
 
-	// ── Stage 6–9: Not yet implemented ──
-	stages := []struct {
-		name Stage
-		desc string
-	}{
-		{StageInteraction, "User Interaction"},
-		{StageExecution, "Execution"},
-		{StageLogging, "Logging"},
-		{StageRecovery, "Recovery"},
+	// ── Stage 6: Interaction ──
+	p.logger.Info(string(StageInteraction), "Presenting plan to user", nil)
+
+	handler := interaction.NewHandler()
+	decision := handler.PresentPlan(
+		string(input.ExecutionMode),
+		execPlan,
+		valReport,
+		input.DryRun,
+	)
+
+	p.logger.Info(string(StageInteraction), "User decision received", map[string]interface{}{
+		"approved":      decision.Approved,
+		"mode":          decision.ExecutionMode,
+		"skipped_steps": decision.SkippedSteps,
+	})
+
+	// Explain mode or user rejected — stop here
+	if !decision.Approved {
+		if input.ExecutionMode == ModeExplain {
+			p.logger.Info(string(StageInteraction), "Explain mode — no execution", nil)
+			return nil
+		}
+		return NewPipelineError(ErrUserAbort, string(StageInteraction), "Execution cancelled by user", nil)
 	}
 
-	for _, s := range stages {
-		p.logger.Debug(string(s.name), fmt.Sprintf("Stage stub: %s (not yet implemented)", s.desc), nil)
+	// ── Stage 7: Execution ──
+	p.logger.Info(string(StageExecution), "Starting execution", nil)
+	fmt.Printf("\n▶️  Executing...\n\n")
+
+	eng := executor.NewEngine(input.DryRun)
+	execResult := eng.Execute(execPlan, decision, string(input.ExecutionMode))
+
+	// Display result summary
+	fmt.Printf("\n════════════════════════════════════════\n")
+	switch execResult.Status {
+	case executor.ExecSuccess:
+		fmt.Printf("✅ All steps completed successfully.\n")
+	case executor.ExecPartialFailure:
+		fmt.Printf("⚠️  Partial completion: %d/%d steps succeeded.\n",
+			execResult.StepsCompleted, execResult.StepsTotal)
+	case executor.ExecFailure:
+		fmt.Printf("❌ Execution failed at step %d.\n", len(execResult.StepResults))
+	case executor.ExecAborted:
+		fmt.Printf("⛔ Execution aborted by user.\n")
+	}
+	fmt.Printf("  Total time: %s\n", execResult.TotalDuration.Round(time.Millisecond))
+	fmt.Printf("════════════════════════════════════════\n")
+
+	p.logger.Info(string(StageExecution), "Execution complete", map[string]interface{}{
+		"status":          string(execResult.Status),
+		"steps_completed": execResult.StepsCompleted,
+		"steps_total":     execResult.StepsTotal,
+		"duration_ms":     execResult.TotalDuration.Milliseconds(),
+	})
+
+	if execResult.Status == executor.ExecFailure {
+		return NewPipelineError(ErrExecFail, string(StageExecution),
+			fmt.Sprintf("Execution failed: %d/%d steps completed",
+				execResult.StepsCompleted, execResult.StepsTotal), nil)
 	}
 
-	fmt.Printf("\n📋 Remaining pipeline stages (Phase 7–9) not yet implemented.\n")
-	fmt.Printf("   Intent + Context + Planner + Validator stages completed successfully.\n")
-
-	p.logger.Info(string(StageLogging), "Pipeline completed (through validation)", nil)
+	p.logger.Info(string(StageLogging), "Pipeline completed successfully", nil)
 	return nil
 }
 
