@@ -9,6 +9,7 @@ import (
 	"github.com/taasezer/TaaNOS/internal/intent"
 	"github.com/taasezer/TaaNOS/internal/logger"
 	osutil "github.com/taasezer/TaaNOS/internal/os"
+	"github.com/taasezer/TaaNOS/internal/planner"
 )
 
 // ExecutionMode defines how TaaNOS presents and executes plans.
@@ -198,12 +199,56 @@ func (p *Pipeline) Run(input RawInput) error {
 		"memory_free": sysCtx.Resources.MemoryFreeMB,
 	})
 
-	// ── Stage 4–9: Not yet implemented ──
+	// ── Stage 4: Planning ──
+	p.logger.Info(string(StagePlanning), "Building execution plan", nil)
+	fmt.Printf("\n📐 Building execution plan...\n")
+
+	pln := planner.NewPlanner()
+	execPlan, err := pln.BuildPlan(intentResult, sysCtx)
+	if err != nil {
+		p.logger.Error(string(StagePlanning), "Plan building failed",
+			map[string]interface{}{"error": err.Error()})
+		return NewPipelineError(ErrPlanUnsupported, string(StagePlanning), err.Error(), err)
+	}
+
+	p.logger.SetPlanID(execPlan.PlanID)
+
+	// Display the plan
+	fmt.Printf("\n✅ Execution Plan\n")
+	fmt.Printf("   Plan ID:   %s\n", execPlan.PlanID[:8])
+	fmt.Printf("   Summary:   %s\n", execPlan.IntentSummary)
+	fmt.Printf("   Steps:     %d\n", len(execPlan.Steps))
+	fmt.Printf("   Risk:      %s\n", execPlan.RiskLevel)
+	fmt.Printf("   Est. Time: %ds\n", execPlan.EstimatedDurationSeconds)
+
+	for _, step := range execPlan.Steps {
+		rootTag := ""
+		if step.RequiresRoot {
+			rootTag = " [sudo]"
+		}
+		canFailTag := ""
+		if step.CanFail {
+			canFailTag = " (can fail)"
+		}
+		fmt.Printf("\n   Step %d: %s%s%s\n", step.ID, step.Description, rootTag, canFailTag)
+		fmt.Printf("     → %s\n", step.CommandTemplate)
+		fmt.Printf("     Timeout: %s\n", step.Timeout)
+		if step.RollbackAction != "" {
+			fmt.Printf("     Rollback: %s\n", step.RollbackAction)
+		}
+	}
+
+	p.logger.Info(string(StagePlanning), "Execution plan built", map[string]interface{}{
+		"plan_id":    execPlan.PlanID,
+		"steps":      len(execPlan.Steps),
+		"risk_level": string(execPlan.RiskLevel),
+	})
+
+	// ── Stage 5–9: Not yet implemented ──
 	stages := []struct {
 		name Stage
 		desc string
 	}{
-		{StagePlanning, "Plan Building"},
 		{StageValidation, "Safety Validation"},
 		{StageInteraction, "User Interaction"},
 		{StageExecution, "Execution"},
@@ -215,10 +260,10 @@ func (p *Pipeline) Run(input RawInput) error {
 		p.logger.Debug(string(s.name), fmt.Sprintf("Stage stub: %s (not yet implemented)", s.desc), nil)
 	}
 
-	fmt.Printf("\n📋 Remaining pipeline stages (Phase 5–8) not yet implemented.\n")
-	fmt.Printf("   Intent + Context stages completed successfully.\n")
+	fmt.Printf("\n📋 Remaining pipeline stages (Phase 6–8) not yet implemented.\n")
+	fmt.Printf("   Intent + Context + Planner stages completed successfully.\n")
 
-	p.logger.Info(string(StageLogging), "Pipeline completed (intent + context)", nil)
+	p.logger.Info(string(StageLogging), "Pipeline completed (intent + context + planner)", nil)
 	return nil
 }
 
