@@ -10,6 +10,7 @@ import (
 	"github.com/taasezer/TaaNOS/internal/history"
 	"github.com/taasezer/TaaNOS/internal/logger"
 	"github.com/taasezer/TaaNOS/internal/pipeline"
+	"github.com/taasezer/TaaNOS/internal/setup"
 )
 
 const version = "0.1.0-dev"
@@ -37,6 +38,9 @@ func main() {
 
 	case "history":
 		cmdHistory()
+
+	case "init":
+		cmdInit()
 
 	default:
 		// Everything else is treated as natural language input
@@ -66,6 +70,7 @@ COMMANDS:
   status        Show TaaNOS system status
   config        Show current configuration
   history       Show execution history
+  init          First-time setup wizard (Ollama + model detection)
 
 MODE FLAGS:
   -m, --mode    Execution mode: explain | guided | auto  (default: guided)
@@ -265,4 +270,12 @@ func cmdHistory() {
 	}
 
 	fmt.Printf("╚══════════════════════════════════════════════════════════╝\n")
+}
+
+func cmdInit() {
+	wiz := setup.NewWizard()
+	if err := wiz.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "\ntaanos: setup error: %v\n", err)
+		os.Exit(1)
+	}
 }
