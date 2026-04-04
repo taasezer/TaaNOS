@@ -90,6 +90,7 @@ func (w *Wizard) Run() error {
 type SystemInfo struct {
 	OS             string
 	Arch           string
+	Kernel         string
 	IsVM           bool
 	VMType         string
 	TotalRAMMB     int64
@@ -102,8 +103,9 @@ func (w *Wizard) detectSystem() SystemInfo {
 	fmt.Println("🔍 Detecting system...")
 
 	info := SystemInfo{
-		OS:   runtime.GOOS,
-		Arch: runtime.GOARCH,
+		OS:     runtime.GOOS,
+		Arch:   runtime.GOARCH,
+		Kernel: detectKernel(),
 	}
 
 	// Detect VM
@@ -118,6 +120,9 @@ func (w *Wizard) detectSystem() SystemInfo {
 // displaySystemInfo shows what was detected.
 func (w *Wizard) displaySystemInfo(info SystemInfo) {
 	fmt.Printf("\n  System:     %s/%s\n", info.OS, info.Arch)
+	if info.Kernel != "" {
+		fmt.Printf("  Kernel:     %s\n", info.Kernel)
+	}
 	if info.IsVM {
 		fmt.Printf("  VM:         ✅ Yes (%s)\n", info.VMType)
 	} else {
@@ -291,70 +296,3 @@ func (w *Wizard) prompt() string {
 	return strings.TrimSpace(strings.ToLower(input))
 }
 
-// detectVirtualization checks if running in a VM.
-func detectVirtualization() (bool, string) {
-	if runtime.GOOS != "linux" {
-		return false, ""
-	}
-
-	// Method 1: systemd-detect-virt
-	out, err := exec.Command("systemd-detect-virt").Output()
-	if err == nil {
-		virt := strings.TrimSpace(string(out))
-		if virt != "none" && virt != "" {
-			return true, virt
-		}
-	}
-
-	// Method 2: Check DMI product name
-	data, err := os.ReadFile("/sys/class/dmi/id/product_name")
-	if err == nil {
-		product := strings.TrimSpace(strings.ToLower(string(data)))
-		vmIndicators := []string{"virtualbox", "vmware", "kvm", "qemu", "hyper-v", "xen", "parallels"}
-		for _, indicator := range vmIndicators {
-			if strings.Contains(product, indicator) {
-				return true, indicator
-			}
-		}
-	}
-
-	// Method 3: Check if /proc/cpuinfo contains hypervisor flag
-	cpuinfo, err := os.ReadFile("/proc/cpuinfo")
-	if err == nil && strings.Contains(string(cpuinfo), "hypervisor") {
-		return true, "hypervisor"
-	}
-
-	return false, ""
-}
-
-// detectRAM returns total and available RAM in MB.
-func detectRAM() (int64, int64) {
-	if runtime.GOOS != "linux" {
-		return 0, 0
-	}
-
-	data, err := os.ReadFile("/proc/meminfo")
-	if err != nil {
-		return 0, 0
-	}
-
-	var totalKB, availableKB int64
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		val, err := strconv.ParseInt(fields[1], 10, 64)
-		if err != nil {
-			continue
-		}
-		switch fields[0] {
-		case "MemTotal:":
-			totalKB = val
-		case "MemAvailable:":
-			availableKB = val
-		}
-	}
-
-	return totalKB / 1024, availableKB / 1024
-}
