@@ -77,21 +77,5 @@ taanos start the apache service
 
 ---
 
-## Architecture: The 9 Stages of TaaNOS
-
-TaaNOS operates through a structured pipeline to ensure deterministic results from non-deterministic AI inputs:
-
-1. **Input Parsing**: Extracts flags and cleanses natural language input.
-2. **Intent Extraction (AI Boundary)**: Uses Ollama to extract Category, Action, and Target parameters against a strict internal schema.
-3. **Context Analysis**: Probes the system for OS details, package manager status, user privileges, and available resources.
-4. **Planning (Zero-AI)**: Map the intent to a deterministic sequence of steps from the hardcoded execution registry.
-5. **Validation**: Runs 7 safety checks including blocked actions, disk space, and risk thresholding.
-6. **Interaction**: Presents the plan and validation report to the user for final approval.
-7. **Execution**: Translates steps into system processes with stdout/stderr capture and timeout management.
-8. **Recovery**: Triggers rollback actions for previous steps if a failure occurs mid-execution.
-9. **History Logging**: Commits the entire lifecycle profile to a local SQLite write-ahead-log database.
-
----
-
 ## License
 MIT
