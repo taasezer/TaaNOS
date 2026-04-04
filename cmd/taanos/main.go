@@ -42,6 +42,9 @@ func main() {
 	case "init":
 		cmdInit()
 
+	case "model":
+		cmdModel()
+
 	default:
 		// Everything else is treated as natural language input
 		cmdRun(os.Args[1:])
@@ -71,6 +74,7 @@ COMMANDS:
   config        Show current configuration
   history       Show execution history
   init          First-time setup wizard (Ollama + model detection)
+  model         View or change the current AI model
 
 MODE FLAGS:
   -m, --mode    Execution mode: explain | guided | auto  (default: guided)
@@ -278,4 +282,28 @@ func cmdInit() {
 		fmt.Fprintf(os.Stderr, "\ntaanos: setup error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func cmdModel() {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "taanos: config error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(os.Args) < 3 {
+		fmt.Printf("Current model: %s\n", cfg.Ollama.Model)
+		fmt.Println("Usage: taanos model <model_name>")
+		return
+	}
+
+	newModel := os.Args[2]
+	cfg.Ollama.Model = newModel
+
+	if err := config.Save(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "taanos: failed to save config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Model changed to: %s\n", newModel)
 }
