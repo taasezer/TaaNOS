@@ -7,11 +7,13 @@ import (
 	"github.com/taasezer/TaaNOS/config"
 	appctx "github.com/taasezer/TaaNOS/internal/context"
 	"github.com/taasezer/TaaNOS/internal/executor"
+	"github.com/taasezer/TaaNOS/internal/history"
 	"github.com/taasezer/TaaNOS/internal/intent"
 	"github.com/taasezer/TaaNOS/internal/interaction"
 	"github.com/taasezer/TaaNOS/internal/logger"
 	osutil "github.com/taasezer/TaaNOS/internal/os"
 	"github.com/taasezer/TaaNOS/internal/planner"
+	"github.com/taasezer/TaaNOS/internal/recovery"
 	"github.com/taasezer/TaaNOS/internal/validator"
 )
 
@@ -346,6 +348,73 @@ func (p *Pipeline) Run(input RawInput) error {
 		"steps_total":     execResult.StepsTotal,
 		"duration_ms":     execResult.TotalDuration.Milliseconds(),
 	})
+
+	// ── Stage 8: Recovery (on failure) ──
+	if execResult.Status == executor.ExecFailure {
+		p.logger.Info(string(StageRecovery), "Attempting rollback", nil)
+		fmt.Printf("\n↩️  Attempting rollback...\n")
+
+		recoveryEng := recovery.NewEngine()
+		rollbackResults := recoveryEng.Rollback(execPlan, execResult)
+
+		rollbackSuccess := 0
+		for _, rr := range rollbackResults {
+			if rr.Success {
+				rollbackSuccess++
+			}
+		}
+
+		p.logger.Info(string(StageRecovery), "Rollback complete", map[string]interface{}{
+			"total":     len(rollbackResults),
+			"succeeded": rollbackSuccess,
+		})
+
+		if len(rollbackResults) > 0 {
+			fmt.Printf("  Rollback: %d/%d steps reversed\n", rollbackSuccess, len(rollbackResults))
+		} else {
+			fmt.Printf("  No rollback actions available\n")
+		}
+	}
+
+	// ── Stage 9: History (SQLite) ──
+	p.logger.Info(string(StageLogging), "Saving to history", nil)
+
+	store, err := history.NewStore(p.config.Logging.Directory)
+	if err == nil {
+		defer store.Close()
+
+		statusStr := string(execResult.Status)
+		if input.ExecutionMode == ModeExplain {
+			statusStr = "explain"
+		}
+
+		record := &history.PlanRecord{
+			PlanID:         execPlan.PlanID,
+			Intent:         execPlan.IntentSummary,
+			Category:       string(intentResult.Category),
+			Action:         string(intentResult.Action),
+			Target:         intentResult.Parameters.Target,
+			Status:         statusStr,
+			RiskLevel:      string(execPlan.RiskLevel),
+			StepsTotal:     execResult.StepsTotal,
+			StepsCompleted: execResult.StepsCompleted,
+			DurationMs:     execResult.TotalDuration.Milliseconds(),
+			StepsJSON:      history.MarshalStepResults(execResult.StepResults),
+			OS:             sysCtx.OS.Distro,
+			PkgManager:     sysCtx.PackageManager.Name,
+			User:           sysCtx.User.Name,
+		}
+
+		if err := store.Save(record); err != nil {
+			p.logger.Warn(string(StageLogging), "Failed to save history", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			p.logger.Info(string(StageLogging), "History saved", map[string]interface{}{
+				"plan_id": execPlan.PlanID,
+			})
+		}
+	}
 
 	if execResult.Status == executor.ExecFailure {
 		return NewPipelineError(ErrExecFail, string(StageExecution),

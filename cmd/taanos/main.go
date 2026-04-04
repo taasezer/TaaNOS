@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/taasezer/TaaNOS/config"
+	"github.com/taasezer/TaaNOS/internal/history"
 	"github.com/taasezer/TaaNOS/internal/logger"
 	"github.com/taasezer/TaaNOS/internal/pipeline"
 )
@@ -215,6 +216,53 @@ func cmdConfig() {
 }
 
 func cmdHistory() {
-	fmt.Println("taanos: history not yet implemented (Phase 8 — Logger & Recovery)")
-	fmt.Println("  History will use SQLite for structured queries.")
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "taanos: config error: %v\n", err)
+		os.Exit(1)
+	}
+
+	store, err := history.NewStore(cfg.Logging.Directory)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "taanos: history error: %v\n", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+
+	count, _ := store.Count()
+	if count == 0 {
+		fmt.Println("No execution history yet.")
+		return
+	}
+
+	records, err := store.GetRecent(20)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "taanos: history query error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("╔══════════════════════════════════════════════════════════╗\n")
+	fmt.Printf("║                  TaaNOS History (%d records)             ║\n", count)
+	fmt.Printf("╠══════════════════════════════════════════════════════════╣\n")
+
+	for _, r := range records {
+		statusIcon := "✅"
+		switch r.Status {
+		case "failure":
+			statusIcon = "❌"
+		case "partial_failure":
+			statusIcon = "⚠️ "
+		case "explain":
+			statusIcon = "📖"
+		case "aborted":
+			statusIcon = "⛔"
+		}
+
+		fmt.Printf("║ %s %-50s ║\n", statusIcon,
+			fmt.Sprintf("[%s] %s → %s/%s %s (%dms, risk:%s)",
+				r.PlanID[:8], r.CreatedAt.Format("2006-01-02 15:04"),
+				r.Category, r.Action, r.Target, r.DurationMs, r.RiskLevel))
+	}
+
+	fmt.Printf("╚══════════════════════════════════════════════════════════╝\n")
 }
