@@ -10,6 +10,7 @@ import (
 	"github.com/taasezer/TaaNOS/internal/logger"
 	osutil "github.com/taasezer/TaaNOS/internal/os"
 	"github.com/taasezer/TaaNOS/internal/planner"
+	"github.com/taasezer/TaaNOS/internal/validator"
 )
 
 // ExecutionMode defines how TaaNOS presents and executes plans.
@@ -244,12 +245,55 @@ func (p *Pipeline) Run(input RawInput) error {
 		"risk_level": string(execPlan.RiskLevel),
 	})
 
-	// ── Stage 5–9: Not yet implemented ──
+	// ── Stage 5: Validation ──
+	p.logger.Info(string(StageValidation), "Running safety checks", nil)
+	fmt.Printf("\n🛡️  Running safety checks...\n")
+
+	val := validator.NewValidator(p.config)
+	valReport := val.Validate(execPlan, sysCtx)
+
+	// Display validation report
+	if valReport.IsValid {
+		fmt.Printf("\n✅ Validation Passed\n")
+	} else {
+		fmt.Printf("\n❌ Validation FAILED\n")
+	}
+	fmt.Printf("   Risk Score: %d/%d\n", valReport.RiskScore, valReport.MaxRiskScore)
+
+	for _, check := range valReport.Checks {
+		statusIcon := "✅"
+		if !check.Passed {
+			statusIcon = "❌"
+		}
+		fmt.Printf("   %s %s: %s\n", statusIcon, check.Check, check.Details)
+	}
+
+	for _, warning := range valReport.Warnings {
+		fmt.Printf("   ⚠️  %s\n", warning)
+	}
+
+	p.logger.Info(string(StageValidation), "Validation complete", map[string]interface{}{
+		"is_valid":   valReport.IsValid,
+		"risk_score": valReport.RiskScore,
+		"blocked":    valReport.Blocked,
+	})
+
+	// Block execution if validation failed (unless --force)
+	if valReport.Blocked && !input.Force {
+		msg := fmt.Sprintf("Plan blocked: %s", valReport.BlockReason)
+		fmt.Printf("\n⛔ %s\n", msg)
+		return NewPipelineError(ErrValidRisk, string(StageValidation), msg, nil)
+	}
+
+	if valReport.Blocked && input.Force {
+		fmt.Printf("\n⚠️  Validation warnings overridden with --force\n")
+	}
+
+	// ── Stage 6–9: Not yet implemented ──
 	stages := []struct {
 		name Stage
 		desc string
 	}{
-		{StageValidation, "Safety Validation"},
 		{StageInteraction, "User Interaction"},
 		{StageExecution, "Execution"},
 		{StageLogging, "Logging"},
@@ -260,10 +304,10 @@ func (p *Pipeline) Run(input RawInput) error {
 		p.logger.Debug(string(s.name), fmt.Sprintf("Stage stub: %s (not yet implemented)", s.desc), nil)
 	}
 
-	fmt.Printf("\n📋 Remaining pipeline stages (Phase 6–8) not yet implemented.\n")
-	fmt.Printf("   Intent + Context + Planner stages completed successfully.\n")
+	fmt.Printf("\n📋 Remaining pipeline stages (Phase 7–9) not yet implemented.\n")
+	fmt.Printf("   Intent + Context + Planner + Validator stages completed successfully.\n")
 
-	p.logger.Info(string(StageLogging), "Pipeline completed (intent + context + planner)", nil)
+	p.logger.Info(string(StageLogging), "Pipeline completed (through validation)", nil)
 	return nil
 }
 
