@@ -2,6 +2,7 @@ package intent
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,7 +52,9 @@ func NewExtractor(cfg ExtractorConfig) *Extractor {
 	return &Extractor{
 		config: cfg,
 		client: &http.Client{
-			Timeout: cfg.Timeout,
+			// Do NOT set Client.Timeout here.
+			// We use per-request context timeouts instead,
+			// because model cold-start can exceed the inference timeout.
 		},
 	}
 }
@@ -68,9 +71,9 @@ func (e *Extractor) Extract(userInput string) (*IntentResult, error) {
 		}
 		lastErr = err
 
-		// Don't retry on connection errors — they won't resolve
+		// Don't retry on connection/timeout errors — they won't resolve
 		if isConnectionError(err) {
-			return nil, fmt.Errorf("Ollama connection failed: %w\n\nMake sure Ollama is running:\n  ollama serve\n\nEndpoint: %s",
+			return nil, fmt.Errorf("Ollama connection failed: %w\n\nMake sure Ollama is running:\n  ollama serve\n\nTips:\n  - Increase timeout: taanos config set ollama.timeout 120s\n  - Use a smaller model: taanos model tinyllama\n\nEndpoint: %s",
 				err, e.config.Endpoint)
 		}
 	}
@@ -81,7 +84,13 @@ func (e *Extractor) Extract(userInput string) (*IntentResult, error) {
 
 // CheckConnection verifies that Ollama is reachable.
 func (e *Extractor) CheckConnection() error {
-	resp, err := e.client.Get(e.config.Endpoint)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", e.config.Endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("cannot reach Ollama at %s: %w", e.config.Endpoint, err)
+	}
+	resp, err := e.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("cannot reach Ollama at %s: %w", e.config.Endpoint, err)
 	}
@@ -113,7 +122,19 @@ func (e *Extractor) doExtract(userInput string, attempt int) (*IntentResult, err
 	}
 
 	url := fmt.Sprintf("%s/api/generate", e.config.Endpoint)
-	resp, err := e.client.Post(url, "application/json", bytes.NewReader(jsonBody))
+
+	// Use context-based timeout for the inference request.
+	// This allows the model to load (cold start can take 60s+).
+	ctx, cancel := context.WithTimeout(context.Background(), e.config.Timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := e.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("Ollama request failed: %w", err)
 	}
@@ -138,7 +159,7 @@ func (e *Extractor) doExtract(userInput string, attempt int) (*IntentResult, err
 	// Parse and validate the LLM's actual response (the JSON intent)
 	result, err := ParseAndValidate([]byte(ollamaResp.Response))
 	if err != nil {
-		return nil, fmt.Errorf("attempt %d: %w", attempt+1, err)
+		return nil, fmt.Errorf("attempt %d: %w (model_response: %q)", attempt+1, err, ollamaResp.Response)
 	}
 
 	// Attach metadata
@@ -161,6 +182,8 @@ func isConnectionError(err error) bool {
 		"cannot reach",
 		"dial tcp",
 		"i/o timeout",
+		"context deadline exceeded",
+		"Client.Timeout",
 	}
 	for _, indicator := range connectionIndicators {
 		if contains(errStr, indicator) {

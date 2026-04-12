@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/taasezer/TaaNOS/config"
@@ -99,7 +100,14 @@ func (p *Pipeline) Run(input RawInput) error {
 	if err != nil {
 		p.logger.Error(string(StageIntent), "Intent extraction failed",
 			map[string]interface{}{"error": err.Error()})
-		return NewPipelineError(ErrOllamaConn, string(StageIntent), err.Error(), err)
+
+		// Use proper error code based on error type
+		errCode := ErrIntentParse
+		errStr := err.Error()
+		if strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "context deadline") || strings.Contains(errStr, "dial tcp") {
+			errCode = ErrOllamaConn
+		}
+		return NewPipelineError(errCode, string(StageIntent), err.Error(), err)
 	}
 
 	p.logger.Info(string(StageIntent), "Intent extracted successfully", map[string]interface{}{

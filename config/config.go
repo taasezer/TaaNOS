@@ -21,7 +21,7 @@ func Default() *Config {
 		Ollama: OllamaConfig{
 			Endpoint:   "http://localhost:11434",
 			Model:      "llama3.2",
-			Timeout:    30 * time.Second,
+			Timeout:    120 * time.Second,
 			MaxRetries: 2,
 		},
 		Execution: ExecutionConfig{
