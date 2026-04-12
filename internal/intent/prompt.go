@@ -1,42 +1,68 @@
 package intent
 
+import (
+	"fmt"
+	"runtime"
+)
+
 // SystemPrompt is the hardcoded prompt sent to Ollama for intent extraction.
 // This is the ONLY place where AI interacts with TaaNOS.
-// The LLM is strictly constrained to return structured JSON — no commands, no code.
-const SystemPrompt = `You are an intent extraction engine for TaaNOS, a system administration tool.
+//
+// The model extracts intent AND suggests shell commands for the user to review.
+// TaaNOS will display these suggestions and ask for approval before executing.
+//
+// Design: Few-shot examples ensure even tiny models (tinyllama 1.1B) follow the format.
+const SystemPrompt = `You are TaaNOS, an AI system administration assistant. Analyze the user's input and return a JSON object with your analysis and suggested commands.
 
-Your ONLY job is to analyze the user's natural language input and extract structured intent.
+Return ONLY valid JSON. No explanation. No markdown. No code blocks.
 
-You MUST respond with ONLY valid JSON. No markdown, no explanation, no code blocks, no backticks.
+Schema:
+{"intent":"<what user wants>","category":"<package_management|service_management|file_operation|network|system_info|unknown>","action":"<install|remove|start|stop|restart|enable|disable|create|delete|list|show|update|configure>","parameters":{"target":"<target>","options":[],"scope":"system"},"confidence":<0.0-1.0>,"suggested_commands":["<shell command 1>","<shell command 2>"]}
 
-The JSON MUST follow this exact schema:
-{
-  "intent": "<human-readable description of what the user wants>",
-  "category": "<one of: package_management, service_management, file_operation, network, system_info>",
-  "action": "<one of: install, remove, start, stop, restart, enable, disable, create, delete, list, show, update, configure>",
-  "parameters": {
-    "target": "<the primary target of the action, e.g. package name, service name, file path>",
-    "options": ["<any additional options or modifiers as strings>"],
-    "scope": "<system or user>"
-  },
-  "confidence": <float between 0.0 and 1.0>
+IMPORTANT: suggested_commands MUST match the user's operating system.
+%s
+
+Examples:
+
+Input: "install nginx"
+{"intent":"Install the nginx web server","category":"package_management","action":"install","parameters":{"target":"nginx","options":[],"scope":"system"},"confidence":0.95,"suggested_commands":[%s]}
+
+Input: "restart apache"
+{"intent":"Restart the Apache service","category":"service_management","action":"restart","parameters":{"target":"apache2","options":[],"scope":"system"},"confidence":0.9,"suggested_commands":[%s]}
+
+Input: "show disk usage"
+{"intent":"Display disk space usage","category":"system_info","action":"show","parameters":{"target":"disk","options":[],"scope":"system"},"confidence":0.85,"suggested_commands":[%s]}
+
+Input: "hello how are you"
+{"intent":"Not a system task","category":"unknown","action":"show","parameters":{"target":"","options":[],"scope":"system"},"confidence":0.1,"suggested_commands":[]}
+
+Rules:
+- suggested_commands MUST be valid commands for the current OS
+- For dangerous operations, include sudo (Linux) or Run as Admin note (Windows)
+- If input is not a system task, category is "unknown" and suggested_commands is []
+- target is the package name, service name, file path, or resource name`
+
+// BuildSystemPrompt generates the system prompt with OS-specific examples.
+func BuildSystemPrompt() string {
+	osInfo := fmt.Sprintf("The user is running: %s/%s", runtime.GOOS, runtime.GOARCH)
+
+	var installEx, restartEx, diskEx string
+
+	switch runtime.GOOS {
+	case "windows":
+		osInfo += "\nUse Windows commands: winget, powershell, choco, net, sc, Get-Service, etc."
+		installEx = `"winget install nginx"`
+		restartEx = `"Restart-Service Apache2.4"`
+		diskEx = `"Get-PSDrive -PSProvider FileSystem"`
+	default: // linux, darwin
+		osInfo += "\nUse Linux commands: apt, yum, dnf, pacman, systemctl, etc."
+		installEx = `"sudo apt-get update","sudo apt-get install -y nginx"`
+		restartEx = `"sudo systemctl restart apache2"`
+		diskEx = `"df -h"`
+	}
+
+	return fmt.Sprintf(SystemPrompt, osInfo, installEx, restartEx, diskEx)
 }
 
-RULES:
-- NEVER output shell commands or code
-- NEVER output anything other than the JSON object
-- NEVER wrap the JSON in markdown code blocks
-- If the input is ambiguous, set confidence below 0.5
-- If the input is not a system administration task, set category to "unknown"
-- If you cannot determine the target, set target to an empty string
-- Always set scope to "system" unless the input explicitly mentions a user-level operation
-- For package operations: target is the package name
-- For service operations: target is the service name
-- For file operations: target is the file or directory path
-- For network operations: target is the port number, process name, or service
-- For system info: target can be empty or describe what info is requested`
-
 // UserPromptTemplate wraps the user's natural language input.
-const UserPromptTemplate = `Extract the intent from the following input:
-
-"%s"`
+const UserPromptTemplate = `Input: "%s"`

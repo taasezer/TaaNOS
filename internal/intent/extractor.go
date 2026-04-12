@@ -107,12 +107,13 @@ func (e *Extractor) doExtract(userInput string, attempt int) (*IntentResult, err
 	reqBody := ollamaRequest{
 		Model:  e.config.Model,
 		Prompt: prompt,
-		System: SystemPrompt,
+		System: BuildSystemPrompt(),
 		Stream: false,
 		Format: "json",
 		Options: map[string]interface{}{
-			"temperature": 0.1, // Low temperature for deterministic output
+			"temperature": 0.0,  // Fully deterministic output
 			"top_p":       0.9,
+			"num_predict": 256,  // Intent JSON never exceeds ~200 tokens
 		},
 	}
 

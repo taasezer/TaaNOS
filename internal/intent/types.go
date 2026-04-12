@@ -67,11 +67,12 @@ type Parameters struct {
 
 // IntentResult is the structured output of the intent extraction stage.
 type IntentResult struct {
-	Intent          string     `json:"intent"`
-	Category        Category   `json:"category"`
-	Action          Action     `json:"action"`
-	Parameters      Parameters `json:"parameters"`
-	Confidence      float64    `json:"confidence"`
-	RawLLMResponse  string     `json:"-"`
-	ExtractionTimeMs int64     `json:"-"`
+	Intent            string     `json:"intent"`
+	Category          Category   `json:"category"`
+	Action            Action     `json:"action"`
+	Parameters        Parameters `json:"parameters"`
+	Confidence        float64    `json:"confidence"`
+	SuggestedCommands []string   `json:"suggested_commands"`
+	RawLLMResponse    string     `json:"-"`
+	ExtractionTimeMs  int64      `json:"-"`
 }

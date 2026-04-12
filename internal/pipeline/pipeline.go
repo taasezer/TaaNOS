@@ -2,6 +2,9 @@ package pipeline
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -145,23 +148,84 @@ func (p *Pipeline) Run(input RawInput) error {
 	fmt.Printf("   Confidence:  %.0f%%\n", intentResult.Confidence*100)
 	fmt.Printf("   Time:        %dms\n", intentResult.ExtractionTimeMs)
 
+	// Display AI-suggested commands
+	if len(intentResult.SuggestedCommands) > 0 {
+		fmt.Printf("\n💡 Suggested Commands:\n")
+		for i, cmd := range intentResult.SuggestedCommands {
+			fmt.Printf("   %d. %s\n", i+1, cmd)
+		}
+	}
+
 	if input.Verbose {
 		fmt.Printf("   Raw LLM:     %s\n", intentResult.RawLLMResponse)
 	}
 
-	// ── AI BOUNDARY — NO AI PAST THIS POINT ──
+	// ── AI BOUNDARY ──
 	fmt.Printf("\n   ────────────────────────────────────\n")
-	fmt.Printf("   ⛔ AI BOUNDARY — deterministic pipeline from here\n")
-	fmt.Printf("   ────────────────────────────────────\n")
 
 	// ── Stage 3: Context Analysis ──
 	p.logger.Info(string(StageContext), "Analyzing system context", nil)
 	fmt.Printf("\n🔍 Analyzing system context...\n")
 
 	if p.platform == nil {
-		msg := "Platform not available — context analysis requires a supported OS (Linux)"
-		p.logger.Error(string(StageContext), msg, nil)
-		return NewPipelineError(ErrContextOS, string(StageContext), msg, nil)
+		// On unsupported platforms (Windows), use suggested commands directly
+		p.logger.Info(string(StageContext), "Platform not available, using AI-suggested commands", nil)
+		fmt.Printf("   OS: %s/%s (direct execution mode)\n", runtime.GOOS, runtime.GOARCH)
+
+		if input.ExecutionMode == ModeExplain {
+			fmt.Printf("\n📖 Explain mode — no commands will be executed.\n")
+			return nil
+		}
+
+		// Ask user for confirmation to run suggested commands
+		if len(intentResult.SuggestedCommands) == 0 {
+			fmt.Printf("\n⚠️  No commands suggested for this request.\n")
+			return nil
+		}
+
+		fmt.Printf("\n🚀 Execute these commands?\n")
+		for i, cmd := range intentResult.SuggestedCommands {
+			fmt.Printf("   %d. %s\n", i+1, cmd)
+		}
+		fmt.Printf("\n   [y/N]: ")
+
+		var answer string
+		fmt.Scanln(&answer)
+		answer = strings.ToLower(strings.TrimSpace(answer))
+
+		if answer != "y" && answer != "yes" {
+			fmt.Printf("\n⛔ Aborted by user.\n")
+			return nil
+		}
+
+		// Execute suggested commands
+		fmt.Printf("\n⚙️  Executing...\n")
+		for i, cmd := range intentResult.SuggestedCommands {
+			fmt.Printf("\n   [%d/%d] %s\n", i+1, len(intentResult.SuggestedCommands), cmd)
+
+			var execCmd *exec.Cmd
+			if runtime.GOOS == "windows" {
+				execCmd = exec.Command("powershell", "-Command", cmd)
+			} else {
+				execCmd = exec.Command("sh", "-c", cmd)
+			}
+			execCmd.Stdout = os.Stdout
+			execCmd.Stderr = os.Stderr
+
+			if err := execCmd.Run(); err != nil {
+				fmt.Printf("   ❌ Failed: %v\n", err)
+				fmt.Printf("\n   Continue with remaining commands? [y/N]: ")
+				fmt.Scanln(&answer)
+				if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+					return nil
+				}
+			} else {
+				fmt.Printf("   ✅ Done\n")
+			}
+		}
+
+		fmt.Printf("\n✅ All commands completed.\n")
+		return nil
 	}
 
 	analyzer := appctx.NewAnalyzer(p.platform)
