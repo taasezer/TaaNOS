@@ -13,12 +13,12 @@ import (
 
 // ollamaRequest is the request body for Ollama's /api/generate endpoint.
 type ollamaRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	System string `json:"system"`
-	Stream bool   `json:"stream"`
-	Format string `json:"format"`
-	Options map[string]interface{} `json:"options,omitempty"`
+	Model     string                 `json:"model"`
+	Prompt    string                 `json:"prompt"`
+	System    string                 `json:"system"`
+	Stream    bool                   `json:"stream"`
+	KeepAlive string                 `json:"keep_alive,omitempty"`
+	Options   map[string]interface{} `json:"options,omitempty"`
 }
 
 // ollamaResponse is the response body from Ollama's /api/generate endpoint.
@@ -106,15 +106,15 @@ func (e *Extractor) doExtract(userInput string, attempt int) (*IntentResult, err
 	prompt := fmt.Sprintf(UserPromptTemplate, userInput)
 
 	reqBody := ollamaRequest{
-		Model:  e.config.Model,
-		Prompt: prompt,
-		System: BuildSystemPrompt(),
-		Stream: false,
-		Format: "json",
+		Model:     e.config.Model,
+		Prompt:    prompt,
+		System:    BuildSystemPrompt(),
+		Stream:    false,
+		KeepAlive: "10m",
 		Options: map[string]interface{}{
 			"temperature": 0.0,  // Fully deterministic output
-			"top_p":       0.9,
-			"num_predict": 256,  // Intent JSON never exceeds ~200 tokens
+			"num_predict": 128,  // Intent JSON is ~80-100 tokens
+			"num_ctx":     512,  // Minimal context — our prompt is ~100 tokens
 		},
 	}
 

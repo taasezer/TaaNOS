@@ -25,6 +25,13 @@ type pipelineDoneMsg struct {
 	err    error
 }
 
+// chatDoneMsg is sent when a chat response arrives.
+type chatDoneMsg struct {
+	input    string
+	response string
+	err      error
+}
+
 // state tracks what the REPL is currently doing.
 type state int
 
@@ -49,10 +56,11 @@ type Model struct {
 
 // historyEntry stores one input/output pair in the session.
 type historyEntry struct {
-	input  string
-	output string
-	isErr  bool
-	time   string
+	input      string
+	output     string
+	isErr      bool
+	isPipeline bool   // true if output is from AI pipeline (needs rich formatting)
+	time       string
 }
 
 // Styles
@@ -237,14 +245,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Send to AI pipeline
+			// Route: system query → pipeline, otherwise → chat
 			m.state = stateThinking
 			m.currentInput = input
 			m.textInput.Blur()
 
+			if isSystemQuery(input) {
+				return m, tea.Batch(
+					m.spinner.Tick,
+					m.runPipeline(input),
+				)
+			}
 			return m, tea.Batch(
 				m.spinner.Tick,
-				m.runPipeline(input),
+				m.runChat(input),
 			)
 		}
 
@@ -253,14 +267,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textInput.Focus()
 
 		entry := historyEntry{
-			input: msg.input,
-			time:  time.Now().Format("15:04:05"),
+			input:      msg.input,
+			isPipeline: true,
+			time:       time.Now().Format("15:04:05"),
 		}
 		if msg.err != nil {
 			entry.output = msg.output
 			entry.isErr = true
 		} else {
 			entry.output = msg.output
+		}
+		m.history = append(m.history, entry)
+		return m, textinput.Blink
+
+	case chatDoneMsg:
+		m.state = stateIdle
+		m.textInput.Focus()
+
+		entry := historyEntry{
+			input: msg.input,
+			time:  time.Now().Format("15:04:05"),
+		}
+		if msg.err != nil {
+			entry.output = msg.err.Error()
+			entry.isErr = true
+		} else {
+			entry.output = msg.response
 		}
 		m.history = append(m.history, entry)
 		return m, textinput.Blink
@@ -310,13 +342,18 @@ func (m Model) View() string {
 		b.WriteString("\n  " + inputEchoStyle.Render("❯ "+entry.input))
 		b.WriteString("  " + dimStyle.Render(entry.time) + "\n")
 
-		// Output
-		lines := strings.Split(entry.output, "\n")
-		for _, line := range lines {
-			if entry.isErr {
-				b.WriteString("  " + errorStyle.Render("  ✗ "+line) + "\n")
-			} else {
-				b.WriteString("  " + outputStyle.Render("  "+line) + "\n")
+		// Output — pipeline gets rich formatting, commands get plain
+		if entry.isPipeline && !entry.isErr {
+			formatted := FormatPipelineOutput(entry.output, m.width)
+			b.WriteString(formatted)
+		} else {
+			lines := strings.Split(entry.output, "\n")
+			for _, line := range lines {
+				if entry.isErr {
+					b.WriteString("  " + errorStyle.Render("  ✗ "+line) + "\n")
+				} else {
+					b.WriteString("  " + outputStyle.Render("  "+line) + "\n")
+				}
 			}
 		}
 	}
@@ -475,4 +512,56 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// isSystemQuery checks if the input looks like a system administration request.
+func isSystemQuery(input string) bool {
+	lower := strings.ToLower(input)
+
+	// If it has flags, it's definitely a system query
+	if strings.Contains(lower, "-m ") || strings.Contains(lower, "--mode") ||
+		strings.Contains(lower, "-v") || strings.Contains(lower, "-n") || strings.Contains(lower, "-f") {
+		return true
+	}
+
+	systemKeywords := []string{
+		"install", "remove", "uninstall", "upgrade", "update", "delete",
+		"start", "stop", "restart", "enable", "disable",
+		"check", "show", "list", "find", "search", "version",
+		"create", "mkdir", "touch", "copy", "move", "rename",
+		"port", "network", "firewall", "ping", "dns",
+		"disk", "memory", "cpu", "ram", "process",
+		"service", "package", "docker", "nginx", "apache",
+		"systemctl", "apt", "winget", "brew", "pip", "npm",
+		"permission", "chmod", "chown", "sudo",
+		"log", "config", "configure", "set",
+		"kill", "reboot", "shutdown",
+		"git", "ssh", "curl", "wget",
+	}
+
+	for _, kw := range systemKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// runChat sends a conversational message to Ollama.
+func (m *Model) runChat(input string) tea.Cmd {
+	cfg := m.cfg
+
+	return func() tea.Msg {
+		response, err := Chat(
+			cfg.Ollama.Endpoint,
+			cfg.Ollama.Model,
+			input,
+			cfg.Ollama.Timeout,
+		)
+		if err != nil {
+			return chatDoneMsg{input: input, err: err}
+		}
+		return chatDoneMsg{input: input, response: response}
+	}
 }

@@ -22,7 +22,7 @@ func Default() *Config {
 			Endpoint:   "http://localhost:11434",
 			Model:      "llama3.2",
 			Timeout:    120 * time.Second,
-			MaxRetries: 2,
+			MaxRetries: 1,
 		},
 		Execution: ExecutionConfig{
 			DefaultMode:              "guided",
