@@ -121,7 +121,7 @@ func tryPlainTextFallback(raw string) *IntentResult {
 				Intent:     fmt.Sprintf("%s %s", action, target),
 				Category:   cat,
 				Action:     action,
-				Parameters: Parameters{Target: target, Options: []string{}, Scope: "system"},
+				Parameters: Parameters{Target: target, Options: FlexibleStrings{}, Scope: "system"},
 				Confidence: 0.4, // Low confidence for fallback
 			}
 		}
@@ -152,11 +152,11 @@ func inferCategoryFromAction(act Action) Category {
 func inferCategoryFromText(text string) Category {
 	lower := strings.ToLower(text)
 
-	pkgKeywords := []string{"install", "package", "apt", "yum", "dnf", "pacman", "uninstall", "upgrade"}
-	svcKeywords := []string{"service", "restart", "systemctl", "daemon", "start", "stop"}
-	fileKeywords := []string{"file", "directory", "folder", "delete", "create", "remove file", "path"}
-	netKeywords := []string{"port", "network", "firewall", "ip", "dns", "socket", "connection"}
-	infoKeywords := []string{"disk", "memory", "cpu", "uptime", "info", "status", "usage", "space"}
+	pkgKeywords := []string{"install", "package", "apt", "yum", "dnf", "pacman", "uninstall", "upgrade", "winget", "choco", "brew", "pip", "npm"}
+	svcKeywords := []string{"service", "restart", "systemctl", "daemon", "start", "stop", "enable", "disable"}
+	fileKeywords := []string{"file", "directory", "folder", "delete", "create", "remove file", "path", "move", "copy", "rename", "permission", "chmod"}
+	netKeywords := []string{"port", "network", "firewall", "ip", "dns", "socket", "connection", "ping", "curl", "wget", "http", "ssh"}
+	infoKeywords := []string{"disk", "memory", "cpu", "uptime", "info", "status", "usage", "space", "version", "check", "show", "list", "docker", "kernel", "process", "ram", "temperature", "battery", "os", "system"}
 
 	for _, kw := range pkgKeywords {
 		if strings.Contains(lower, kw) {
@@ -196,27 +196,69 @@ func normalizeCategory(cat Category) Category {
 		return Category(s)
 	}
 
-	// Fuzzy matching
+	// Comprehensive fuzzy matching — handles typos, abbreviations, synonyms
 	categoryMap := map[string]Category{
-		"package":    "package_management",
-		"pkg":        "package_management",
-		"packages":   "package_management",
-		"service":    "service_management",
-		"services":   "service_management",
-		"file":       "file_operation",
-		"files":      "file_operation",
-		"filesystem": "file_operation",
-		"net":        "network",
-		"networking": "network",
-		"info":       "system_info",
-		"system":     "system_info",
-		"sysinfo":    "system_info",
+		// Package management
+		"package":             "package_management",
+		"pkg":                 "package_management",
+		"packages":            "package_management",
+		"package_managemeent": "package_management",
+		"package_mgmt":        "package_management",
+		"packagemanagement":   "package_management",
+		"software":            "package_management",
+		"install":             "package_management",
+		"apt":                 "package_management",
+		"winget":              "package_management",
+		"brew":                "package_management",
+		"choco":               "package_management",
+		"pip":                 "package_management",
+		"npm":                 "package_management",
+		// Service management
+		"service":             "service_management",
+		"services":            "service_management",
+		"service_mgmt":        "service_management",
+		"servicemanagement":   "service_management",
+		"daemon":              "service_management",
+		"systemctl":           "service_management",
+		"systemd":             "service_management",
+		// File operations
+		"file":                "file_operation",
+		"files":               "file_operation",
+		"filesystem":          "file_operation",
+		"file_ops":            "file_operation",
+		"fileoperation":       "file_operation",
+		"directory":           "file_operation",
+		"folder":              "file_operation",
+		// Network
+		"net":                 "network",
+		"networking":          "network",
+		"firewall":            "network",
+		"port":                "network",
+		"dns":                 "network",
+		"connection":          "network",
+		// System info
+		"info":                "system_info",
+		"system":              "system_info",
+		"sysinfo":             "system_info",
+		"system_information":  "system_info",
+		"check":               "system_info",
+		"version":             "system_info",
+		"status":              "system_info",
+		"monitor":             "system_info",
+		"diagnostic":          "system_info",
+		"health":              "system_info",
 	}
 
 	for partial, full := range categoryMap {
-		if strings.Contains(s, partial) {
+		if s == partial || strings.Contains(s, partial) {
 			return full
 		}
+	}
+
+	// Last resort: if it's not empty and not recognized, treat as system_info
+	// rather than rejecting — let the model's intent guide the pipeline
+	if s != "" && s != "unknown" {
+		return "system_info"
 	}
 
 	return "unknown"
@@ -231,35 +273,32 @@ func normalizeAction(act Action) Action {
 		return Action(s)
 	}
 
-	// Fuzzy matching
+	// Comprehensive fuzzy matching
 	actionMap := map[string]Action{
-		"add":       "install",
-		"setup":     "install",
-		"uninstall": "remove",
-		"purge":     "remove",
-		"begin":     "start",
-		"launch":    "start",
-		"halt":      "stop",
-		"kill":      "stop",
-		"reboot":    "restart",
-		"reload":    "restart",
-		"activate":  "enable",
-		"deactivate":"disable",
-		"make":      "create",
-		"mkdir":     "create",
-		"rm":        "delete",
-		"erase":     "delete",
-		"ls":        "list",
-		"dir":       "list",
-		"display":   "show",
-		"view":      "show",
-		"get":       "show",
-		"status":    "show",
-		"upgrade":   "update",
-		"patch":     "update",
-		"set":       "configure",
-		"edit":      "configure",
-		"modify":    "configure",
+		// Install
+		"add": "install", "setup": "install", "deploy": "install", "download": "install", "get": "install", "fetch": "install", "pull": "install",
+		// Remove
+		"uninstall": "remove", "purge": "remove", "erase": "remove", "drop": "remove", "clean": "remove",
+		// Start
+		"begin": "start", "launch": "start", "run": "start", "open": "start", "init": "start", "boot": "start",
+		// Stop
+		"halt": "stop", "kill": "stop", "terminate": "stop", "end": "stop", "close": "stop", "shutdown": "stop",
+		// Restart
+		"reboot": "restart", "reload": "restart", "reset": "restart", "refresh": "restart",
+		// Enable/Disable
+		"activate": "enable", "deactivate": "disable", "turnon": "enable", "turnoff": "disable",
+		// Create/Delete
+		"make": "create", "mkdir": "create", "touch": "create", "new": "create", "generate": "create",
+		"rm": "delete", "rmdir": "delete", "destroy": "delete", "wipe": "delete",
+		// List/Show
+		"ls": "list", "dir": "list", "find": "list", "search": "list", "enumerate": "list",
+		"display": "show", "view": "show", "print": "show", "cat": "show", "read": "show", "info": "show",
+		"status": "show", "check": "show", "verify": "show", "inspect": "show", "describe": "show", "examine": "show",
+		"choose": "show", "select": "show", "query": "show", "lookup": "show", "monitor": "show",
+		// Update
+		"upgrade": "update", "patch": "update", "sync": "update",
+		// Configure
+		"set": "configure", "edit": "configure", "modify": "configure", "change": "configure", "alter": "configure", "adjust": "configure", "tune": "configure",
 	}
 
 	for partial, full := range actionMap {
@@ -268,7 +307,7 @@ func normalizeAction(act Action) Action {
 		}
 	}
 
-	// Default fallback
+	// Default: show (safe, read-only)
 	return "show"
 }
 

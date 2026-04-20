@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -73,7 +74,7 @@ func (e *Extractor) Extract(userInput string) (*IntentResult, error) {
 
 		// Don't retry on connection/timeout errors — they won't resolve
 		if isConnectionError(err) {
-			return nil, fmt.Errorf("Ollama connection failed: %w\n\nMake sure Ollama is running:\n  ollama serve\n\nTips:\n  - Increase timeout: taanos config set ollama.timeout 120s\n  - Use a smaller model: taanos model tinyllama\n\nEndpoint: %s",
+			return nil, fmt.Errorf("Ollama connection failed: %w\n\nMake sure Ollama is running:\n  ollama serve\n\nTips:\n  - Increase timeout: taanos config set ollama.timeout 120s\n  - Use a cloud model: taanos model gemma4:31b-cloud\n  - Use a smaller model: taanos model tinyllama\n\nEndpoint: %s",
 				err, e.config.Endpoint)
 		}
 	}
@@ -157,10 +158,16 @@ func (e *Extractor) doExtract(userInput string, attempt int) (*IntentResult, err
 		return nil, fmt.Errorf("failed to parse Ollama response envelope: %w", err)
 	}
 
+	// Handle empty model response
+	responseText := strings.TrimSpace(ollamaResp.Response)
+	if responseText == "" {
+		return nil, fmt.Errorf("attempt %d: model returned empty response — the model may not support JSON mode or structured output", attempt+1)
+	}
+
 	// Parse and validate the LLM's actual response (the JSON intent)
-	result, err := ParseAndValidate([]byte(ollamaResp.Response))
+	result, err := ParseAndValidate([]byte(responseText))
 	if err != nil {
-		return nil, fmt.Errorf("attempt %d: %w (model_response: %q)", attempt+1, err, ollamaResp.Response)
+		return nil, fmt.Errorf("attempt %d: %w (model_response: %q)", attempt+1, err, responseText)
 	}
 
 	// Attach metadata

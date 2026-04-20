@@ -6,18 +6,21 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/taasezer/TaaNOS/config"
 	"github.com/taasezer/TaaNOS/internal/history"
 	"github.com/taasezer/TaaNOS/internal/logger"
 	"github.com/taasezer/TaaNOS/internal/pipeline"
 	"github.com/taasezer/TaaNOS/internal/setup"
+	"github.com/taasezer/TaaNOS/internal/tui"
 )
 
 const version = "0.1.0-dev"
 
 func main() {
 	if len(os.Args) < 2 {
-		printUsage()
+		cmdREPL()
 		os.Exit(0)
 	}
 
@@ -93,6 +96,29 @@ SECURITY:
   AI is used ONLY for intent extraction. All commands are deterministic
   and mapped from a hardcoded action registry. No AI-generated commands.`)
 	fmt.Println()
+}
+
+func cmdREPL() {
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "taanos: config error: %v\n", err)
+		os.Exit(1)
+	}
+
+	log, err := logger.New(cfg.Logging.Directory, logger.Level(cfg.Logging.Level))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "taanos: logger error: %v\n", err)
+		os.Exit(1)
+	}
+	defer log.Close()
+
+	m := tui.New(cfg, log)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "taanos: TUI error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func cmdRun(args []string) {

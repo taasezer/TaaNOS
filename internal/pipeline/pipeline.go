@@ -122,21 +122,20 @@ func (p *Pipeline) Run(input RawInput) error {
 		"time_ms":    intentResult.ExtractionTimeMs,
 	})
 
-	// Check confidence threshold
-	if intentResult.Confidence < 0.5 {
-		msg := fmt.Sprintf("Low confidence (%.0f%%) — intent is ambiguous. Please rephrase your request.",
-			intentResult.Confidence*100)
-		fmt.Printf("\n⚠️  %s\n", msg)
-		fmt.Printf("   Detected: %s\n", intentResult.Intent)
-		return NewPipelineError(ErrIntentUnknown, string(StageIntent), msg, nil)
+	// Warn on low confidence but don't reject — let the user decide
+	if intentResult.Confidence < 0.3 {
+		fmt.Printf("\n⚠️  Low confidence (%.0f%%) — result may be inaccurate.\n", intentResult.Confidence*100)
 	}
 
-	// Check for unknown category
+	// Warn on unknown category but don't reject
 	if intentResult.Category == intent.CategoryUnknown {
-		msg := "Input does not appear to be a system administration task."
-		fmt.Printf("\n❌ %s\n", msg)
+		fmt.Printf("\n⚠️  This doesn't look like a system administration task.\n")
 		fmt.Printf("   Detected: %s\n", intentResult.Intent)
-		return NewPipelineError(ErrIntentUnknown, string(StageIntent), msg, nil)
+		if len(intentResult.SuggestedCommands) == 0 {
+			return NewPipelineError(ErrIntentUnknown, string(StageIntent),
+				"Not a system task and no commands suggested.", nil)
+		}
+		// If the model still suggested commands, continue
 	}
 
 	// Display extracted intent
@@ -147,6 +146,9 @@ func (p *Pipeline) Run(input RawInput) error {
 	fmt.Printf("   Target:      %s\n", intentResult.Parameters.Target)
 	fmt.Printf("   Confidence:  %.0f%%\n", intentResult.Confidence*100)
 	fmt.Printf("   Time:        %dms\n", intentResult.ExtractionTimeMs)
+
+	// Sanitize AI-suggested commands for the current OS
+	intentResult.SuggestedCommands = intent.SanitizeCommands(intentResult.SuggestedCommands)
 
 	// Display AI-suggested commands
 	if len(intentResult.SuggestedCommands) > 0 {
