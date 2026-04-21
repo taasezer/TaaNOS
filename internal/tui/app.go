@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -32,26 +34,41 @@ type chatDoneMsg struct {
 	err      error
 }
 
+// warmupDoneMsg signals that model warmup completed.
+type warmupDoneMsg struct{}
+
 // state tracks what the REPL is currently doing.
 type state int
 
 const (
 	stateIdle     state = iota
 	stateThinking
+	stateConfirm  // waiting for y/n to execute commands
 )
 
 // Model is the bubbletea model for the TaaNOS interactive REPL.
 type Model struct {
-	textInput textinput.Model
-	spinner   spinner.Model
-	state     state
-	cfg       *config.Config
-	log       *logger.Logger
-	history   []historyEntry
-	width     int
-	height    int
-	quitting  bool
-	currentInput string
+	textInput      textinput.Model
+	spinner        spinner.Model
+	state          state
+	cfg            *config.Config
+	log            *logger.Logger
+	history        []historyEntry
+	conversation   []ConversationEntry // session memory for AI context
+	pendingCmds    []string            // commands waiting for y/n approval
+	pendingInput   string              // original input for pending commands
+	scrollOffset   int                 // 0 = bottom (latest), positive = scrolled up
+	width          int
+	height         int
+	quitting       bool
+	currentInput   string
+}
+
+// execDoneMsg is sent when command execution finishes.
+type execDoneMsg struct {
+	input  string
+	output string
+	err    error
 }
 
 // historyEntry stores one input/output pair in the session.
@@ -139,7 +156,7 @@ func New(cfg *config.Config, log *logger.Logger) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, m.warmupModel())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -150,13 +167,75 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textInput.Width = min(msg.Width-6, 120)
 		return m, nil
 
+	case tea.MouseMsg:
+		switch msg.Type {
+		case tea.MouseWheelUp:
+			m.scrollOffset += 3
+			return m, nil
+		case tea.MouseWheelDown:
+			m.scrollOffset -= 3
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+			return m, nil
+		}
+
 	case tea.KeyMsg:
+		// Handle confirm state — y/n for command approval
+		if m.state == stateConfirm {
+			switch msg.String() {
+			case "y", "Y":
+				m.state = stateThinking
+				cmds := make([]string, len(m.pendingCmds))
+				copy(cmds, m.pendingCmds)
+				input := m.pendingInput
+				m.pendingCmds = nil
+				m.pendingInput = ""
+				return m, tea.Batch(m.spinner.Tick, m.executeCommands(input, cmds))
+			case "n", "N", "esc":
+				m.state = stateIdle
+				m.textInput.Focus()
+				m.history = append(m.history, historyEntry{
+					input: "execute?", output: "⛔ Cancelled by user",
+					time: time.Now().Format("15:04:05"),
+				})
+				m.pendingCmds = nil
+				m.pendingInput = ""
+				return m, textinput.Blink
+			}
+			return m, nil
+		}
+
 		switch msg.Type {
 		case tea.KeyCtrlD:
 			m.quitting = true
 			return m, tea.Quit
 
+		case tea.KeyPgUp:
+			m.scrollOffset += 5
+			return m, nil
+		case tea.KeyPgDown:
+			m.scrollOffset -= 5
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+			return m, nil
+		case tea.KeyUp:
+			if m.state == stateIdle && m.textInput.Value() == "" {
+				m.scrollOffset++
+				return m, nil
+			}
+		case tea.KeyDown:
+			if m.state == stateIdle && m.textInput.Value() == "" {
+				m.scrollOffset--
+				if m.scrollOffset < 0 {
+					m.scrollOffset = 0
+				}
+				return m, nil
+			}
+
 		case tea.KeyEnter:
+			m.scrollOffset = 0 // reset scroll on new input
 			if m.state != stateIdle {
 				return m, nil
 			}
@@ -245,10 +324,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Route: system query → pipeline, otherwise → chat
+			// Route: local match > pipeline > chat
 			m.state = stateThinking
 			m.currentInput = input
 			m.textInput.Blur()
+
+			// Try instant local match first (0ms)
+			if result := tryLocalMatch(input); result != nil {
+				var out strings.Builder
+				out.WriteString(fmt.Sprintf("\n✅ Intent Extracted\n"))
+				out.WriteString(fmt.Sprintf("   Description: %s\n", result.Intent))
+				out.WriteString(fmt.Sprintf("   Category:    %s\n", result.Category))
+				out.WriteString(fmt.Sprintf("   Action:      %s\n", result.Action))
+				out.WriteString(fmt.Sprintf("   Target:      %s\n", result.Parameters.Target))
+				out.WriteString(fmt.Sprintf("   Confidence:  100%%\n"))
+				out.WriteString(fmt.Sprintf("   Time:        0ms (local)\n"))
+				if len(result.SuggestedCommands) > 0 {
+					out.WriteString(fmt.Sprintf("\n💡 Suggested Commands:\n"))
+					for i, cmd := range result.SuggestedCommands {
+						out.WriteString(fmt.Sprintf("   %d. %s\n", i+1, cmd))
+					}
+				}
+				m.history = append(m.history, historyEntry{
+					input: input, output: out.String(),
+					isPipeline: true, time: time.Now().Format("15:04:05"),
+				})
+				m.conversation = append(m.conversation,
+					ConversationEntry{Role: "user", Content: input},
+					ConversationEntry{Role: "assistant", Content: fmt.Sprintf("Suggested: %s", strings.Join([]string(result.SuggestedCommands), ", "))},
+				)
+				// Enter confirm state for approval
+				m.pendingCmds = []string(result.SuggestedCommands)
+				m.pendingInput = input
+				m.state = stateConfirm
+				return m, nil
+			}
 
 			if isSystemQuery(input) {
 				return m, tea.Batch(
@@ -278,6 +388,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			entry.output = msg.output
 		}
 		m.history = append(m.history, entry)
+		// Record in conversation memory
+		m.conversation = append(m.conversation,
+			ConversationEntry{Role: "user", Content: msg.input},
+			ConversationEntry{Role: "assistant", Content: "[System command analysis completed]"},
+		)
 		return m, textinput.Blink
 
 	case chatDoneMsg:
@@ -295,7 +410,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			entry.output = msg.response
 		}
 		m.history = append(m.history, entry)
+		// Record in conversation memory
+		m.conversation = append(m.conversation,
+			ConversationEntry{Role: "user", Content: msg.input},
+			ConversationEntry{Role: "assistant", Content: msg.response},
+		)
 		return m, textinput.Blink
+
+	case execDoneMsg:
+		m.state = stateIdle
+		m.textInput.Focus()
+
+		entry := historyEntry{
+			input: "⚙️ executing",
+			time:  time.Now().Format("15:04:05"),
+		}
+		if msg.err != nil {
+			entry.output = msg.output
+			entry.isErr = true
+		} else {
+			entry.output = msg.output
+		}
+		m.history = append(m.history, entry)
+		m.conversation = append(m.conversation,
+			ConversationEntry{Role: "assistant", Content: "Executed: " + msg.output},
+		)
+		return m, textinput.Blink
+
+	case warmupDoneMsg:
+		// Model is now loaded and warm — no visible change
+		return m, nil
 
 	case spinner.TickMsg:
 		if m.state == stateThinking {
@@ -329,41 +473,87 @@ func (m Model) View() string {
 	b.WriteString("  " + header + model + "\n")
 	b.WriteString("  " + borderStyle.Render(strings.Repeat("─", min(m.width-4, 76))) + "\n")
 
-	// Calculate how many history entries we can show
-	maxHistory := m.height - 8 // leave room for header, input, footer
-	startIdx := 0
-	if len(m.history) > maxHistory && maxHistory > 0 {
-		startIdx = len(m.history) - maxHistory
-	}
-
-	// History
-	for _, entry := range m.history[startIdx:] {
+	// Build all rendered history lines first
+	var historyLines []string
+	for _, entry := range m.history {
 		// Input echo
-		b.WriteString("\n  " + inputEchoStyle.Render("❯ "+entry.input))
-		b.WriteString("  " + dimStyle.Render(entry.time) + "\n")
+		historyLines = append(historyLines,
+			"  "+inputEchoStyle.Render("❯ "+entry.input)+"  "+dimStyle.Render(entry.time))
 
 		// Output — pipeline gets rich formatting, commands get plain
 		if entry.isPipeline && !entry.isErr {
 			formatted := FormatPipelineOutput(entry.output, m.width)
-			b.WriteString(formatted)
+			for _, line := range strings.Split(formatted, "\n") {
+				if line != "" {
+					historyLines = append(historyLines, line)
+				}
+			}
 		} else {
 			lines := strings.Split(entry.output, "\n")
 			for _, line := range lines {
 				if entry.isErr {
-					b.WriteString("  " + errorStyle.Render("  ✗ "+line) + "\n")
+					historyLines = append(historyLines, "  "+errorStyle.Render("  ✗ "+line))
 				} else {
-					b.WriteString("  " + outputStyle.Render("  "+line) + "\n")
+					historyLines = append(historyLines, "  "+outputStyle.Render("  "+line))
 				}
 			}
 		}
+		historyLines = append(historyLines, "") // blank line between entries
+	}
+
+	// Calculate visible window with scroll offset
+	maxVisible := m.height - 8
+	if maxVisible < 5 {
+		maxVisible = 5
+	}
+	totalLines := len(historyLines)
+
+	// Clamp scroll offset (local copy — View can't mutate)
+	offset := m.scrollOffset
+	maxScroll := totalLines - maxVisible
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if offset > maxScroll {
+		offset = maxScroll
+	}
+
+	// Calculate visible range
+	endIdx := totalLines - offset
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+	startIdx := endIdx - maxVisible
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	// Render visible lines
+	if endIdx > startIdx {
+		for _, line := range historyLines[startIdx:endIdx] {
+			b.WriteString(line + "\n")
+		}
+	}
+
+	// Scroll indicator
+	if m.scrollOffset > 0 {
+		b.WriteString("  " + dimStyle.Render(fmt.Sprintf("  ↑ %d more lines (PgUp/PgDn to scroll)", m.scrollOffset)) + "\n")
 	}
 
 	// Current state
-	if m.state == stateThinking {
+	switch m.state {
+	case stateThinking:
 		b.WriteString("\n  " + inputEchoStyle.Render("❯ "+m.currentInput) + "\n")
 		b.WriteString("  " + thinkingStyle.Render(fmt.Sprintf("  %s %s thinking...",
 			m.spinner.View(), m.cfg.Ollama.Model)) + "\n")
-	} else {
+	case stateConfirm:
+		b.WriteString("\n")
+		b.WriteString("  " + thinkingStyle.Render("🚀 Execute these commands?") + "\n")
+		for i, cmd := range m.pendingCmds {
+			b.WriteString("  " + cmdStyle.Render(fmt.Sprintf("   %d. %s", i+1, cmd)) + "\n")
+		}
+		b.WriteString("\n  " + successStyle.Render("[y]") + " execute  " + errorStyle.Render("[n]") + " cancel\n")
+	default:
 		b.WriteString("\n  " + m.textInput.View() + "\n")
 		b.WriteString("  " + dimStyle.Render("Type 'help' for commands, 'exit' to quit") + "\n")
 	}
@@ -548,20 +738,72 @@ func isSystemQuery(input string) bool {
 	return false
 }
 
-// runChat sends a conversational message to Ollama.
+// runChat sends a conversational message to Ollama with session memory.
 func (m *Model) runChat(input string) tea.Cmd {
 	cfg := m.cfg
+	history := make([]ConversationEntry, len(m.conversation))
+	copy(history, m.conversation)
 
 	return func() tea.Msg {
-		response, err := Chat(
+		response, err := ChatWithHistory(
 			cfg.Ollama.Endpoint,
 			cfg.Ollama.Model,
 			input,
+			history,
 			cfg.Ollama.Timeout,
 		)
 		if err != nil {
 			return chatDoneMsg{input: input, err: err}
 		}
 		return chatDoneMsg{input: input, response: response}
+	}
+}
+
+// warmupModel sends a tiny request on REPL start to pre-load the model.
+func (m *Model) warmupModel() tea.Cmd {
+	cfg := m.cfg
+	return func() tea.Msg {
+		// Send a minimal request to load the model into memory
+		Chat(cfg.Ollama.Endpoint, cfg.Ollama.Model, "hi", 30*time.Second)
+		return warmupDoneMsg{}
+	}
+}
+
+// executeCommands runs approved commands and returns output.
+func (m *Model) executeCommands(input string, cmds []string) tea.Cmd {
+	return func() tea.Msg {
+		var output strings.Builder
+		allOk := true
+
+		for i, cmd := range cmds {
+			output.WriteString(fmt.Sprintf("[%d/%d] %s\n", i+1, len(cmds), cmd))
+
+			var execCmd *exec.Cmd
+			if runtime.GOOS == "windows" {
+				execCmd = exec.Command("powershell", "-Command", cmd)
+			} else {
+				execCmd = exec.Command("sh", "-c", cmd)
+			}
+
+			out, err := execCmd.CombinedOutput()
+			if err != nil {
+				output.WriteString(fmt.Sprintf("  ❌ Error: %v\n", err))
+				if len(out) > 0 {
+					output.WriteString(fmt.Sprintf("  %s\n", strings.TrimSpace(string(out))))
+				}
+				allOk = false
+			} else {
+				if len(out) > 0 {
+					output.WriteString(fmt.Sprintf("  %s\n", strings.TrimSpace(string(out))))
+				}
+				output.WriteString("  ✅ Done\n")
+			}
+		}
+
+		if allOk {
+			output.WriteString("\n✅ All commands completed successfully")
+		}
+
+		return execDoneMsg{input: input, output: output.String()}
 	}
 }

@@ -113,7 +113,7 @@ func cmdREPL() {
 	defer log.Close()
 
 	m := tui.New(cfg, log)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "taanos: TUI error: %v\n", err)

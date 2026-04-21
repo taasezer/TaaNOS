@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -24,21 +25,66 @@ type chatResponse struct {
 }
 
 const chatSystemPrompt = `You are TaaNOS, a friendly and knowledgeable AI system assistant.
-You can have casual conversations, answer questions, and help with anything.
-Keep responses concise (2-4 sentences). Be natural, helpful, and conversational.
+You can have conversations, answer questions, write code, explain concepts, and help with anything.
+Be natural and conversational. Give short answers for simple questions, detailed answers when needed. Write full code when asked.
 IMPORTANT: Always respond in the SAME LANGUAGE the user writes in. If they write in Turkish, respond in Turkish. If they write in Japanese, respond in Japanese. Match their language exactly.
-If the user asks about system tasks, remind them they can use commands like "install nginx" or "check disk space".`
+If the user asks about system tasks, remind them they can use commands like "install nginx" or "check disk space".
+You have memory of this conversation session. Use it to give contextual answers.`
 
-// Chat sends a conversational message to Ollama (no JSON mode, no intent extraction).
+// ConversationEntry represents one exchange in conversation history.
+type ConversationEntry struct {
+	Role    string // "user" or "assistant"
+	Content string
+}
+
+// BuildConversationPrompt creates a prompt with conversation history.
+func BuildConversationPrompt(history []ConversationEntry, currentInput string) string {
+	if len(history) == 0 {
+		return currentInput
+	}
+
+	var b strings.Builder
+
+	// Include last 6 exchanges (3 pairs) — compact for speed
+	start := 0
+	if len(history) > 6 {
+		start = len(history) - 6
+	}
+
+	b.WriteString("Context:\n")
+	for _, entry := range history[start:] {
+		content := entry.Content
+		// Truncate long responses to save tokens
+		if len(content) > 80 {
+			content = content[:80] + "..."
+		}
+		if entry.Role == "user" {
+			b.WriteString("User: " + content + "\n")
+		} else {
+			b.WriteString("AI: " + content + "\n")
+		}
+	}
+	b.WriteString("\nUser: " + currentInput)
+	return b.String()
+}
+
+// Chat sends a conversational message to Ollama with session memory.
 func Chat(endpoint, model, userInput string, timeout time.Duration) (string, error) {
+	return ChatWithHistory(endpoint, model, userInput, nil, timeout)
+}
+
+// ChatWithHistory sends a message with conversation context.
+func ChatWithHistory(endpoint, model, userInput string, history []ConversationEntry, timeout time.Duration) (string, error) {
+	prompt := BuildConversationPrompt(history, userInput)
+
 	reqBody := chatRequest{
 		Model:  model,
-		Prompt: userInput,
+		Prompt: prompt,
 		System: chatSystemPrompt,
 		Stream: false,
 		Options: map[string]interface{}{
-			"num_predict":  200,
-			"temperature":  0.7,
+			"num_predict": 2048,
+			"temperature": 0.7,
 		},
 	}
 
