@@ -75,9 +75,6 @@ var (
 	modeExplainStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#7C8DFF")).
 		Italic(true)
-
-	separatorStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#333333"))
 )
 
 // FormatPipelineOutput parses raw pipeline output and renders it with rich styling.

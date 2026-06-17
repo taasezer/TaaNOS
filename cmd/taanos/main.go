@@ -9,14 +9,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/taasezer/TaaNOS/config"
-	"github.com/taasezer/TaaNOS/internal/history"
 	"github.com/taasezer/TaaNOS/internal/logger"
 	"github.com/taasezer/TaaNOS/internal/pipeline"
 	"github.com/taasezer/TaaNOS/internal/setup"
 	"github.com/taasezer/TaaNOS/internal/tui"
 )
 
-const version = "0.1.0-dev"
+const version = "0.2.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -75,7 +74,7 @@ COMMANDS:
   version       Show version information
   status        Show TaaNOS system status
   config        Show current configuration
-  history       Show execution history
+  history       Show past chat sessions (history <id> for detail)
   init          First-time setup wizard (Ollama + model detection)
   model         View or change the current AI model
 
@@ -251,55 +250,72 @@ func cmdConfig() {
 }
 
 func cmdHistory() {
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "taanos: config error: %v\n", err)
-		os.Exit(1)
-	}
-
-	store, err := history.NewStore(cfg.Logging.Directory)
+	sessions, err := tui.LoadSessions()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "taanos: history error: %v\n", err)
 		os.Exit(1)
 	}
-	defer store.Close()
 
-	count, _ := store.Count()
-	if count == 0 {
-		fmt.Println("No execution history yet.")
+	if len(sessions) == 0 {
+		fmt.Println("No chat sessions yet. Start one with: taanos")
 		return
 	}
 
-	records, err := store.GetRecent(20)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "taanos: history query error: %v\n", err)
+	// If a session ID is provided, show that session's detail
+	if len(os.Args) > 2 {
+		sessionID := os.Args[2]
+		for _, s := range sessions {
+			if s.ID == sessionID {
+				fmt.Printf("\n╔══════════════════════════════════════════════════════════╗\n")
+				fmt.Printf("║  Session: %-46s ║\n", s.StartedAt)
+				fmt.Printf("╠══════════════════════════════════════════════════════════╣\n")
+				for _, h := range s.History {
+					icon := "💬"
+					if h.IsPipeline {
+						icon = "⚙️ "
+					}
+					if h.IsErr {
+						icon = "❌"
+					}
+					fmt.Printf("║ %s %-52s ║\n", icon, truncate(h.Input, 50))
+				}
+				fmt.Printf("╠══════════════════════════════════════════════════════════╣\n")
+				fmt.Printf("║  Resume: taanos  (session memory auto-loaded)           ║\n")
+				fmt.Printf("╚══════════════════════════════════════════════════════════╝\n")
+				return
+			}
+		}
+		fmt.Fprintf(os.Stderr, "taanos: session '%s' not found\n", sessionID)
 		os.Exit(1)
 	}
 
-	fmt.Printf("╔══════════════════════════════════════════════════════════╗\n")
-	fmt.Printf("║                  TaaNOS History (%d records)             ║\n", count)
+	// List all sessions
+	fmt.Printf("\n╔══════════════════════════════════════════════════════════╗\n")
+	fmt.Printf("║              TaaNOS Chat Sessions (%d)                  ║\n", len(sessions))
 	fmt.Printf("╠══════════════════════════════════════════════════════════╣\n")
 
-	for _, r := range records {
-		statusIcon := "✅"
-		switch r.Status {
-		case "failure":
-			statusIcon = "❌"
-		case "partial_failure":
-			statusIcon = "⚠️ "
-		case "explain":
-			statusIcon = "📖"
-		case "aborted":
-			statusIcon = "⛔"
+	for i := len(sessions) - 1; i >= 0; i-- {
+		s := sessions[i]
+		msgCount := len(s.History)
+		lastMsg := ""
+		if msgCount > 0 {
+			lastMsg = truncate(s.History[msgCount-1].Input, 30)
 		}
-
-		fmt.Printf("║ %s %-50s ║\n", statusIcon,
-			fmt.Sprintf("[%s] %s → %s/%s %s (%dms, risk:%s)",
-				r.PlanID[:8], r.CreatedAt.Format("2006-01-02 15:04"),
-				r.Category, r.Action, r.Target, r.DurationMs, r.RiskLevel))
+		fmt.Printf("║  %-14s  %s  %2d msgs  %-18s ║\n",
+			s.ID, s.StartedAt[:16], msgCount, lastMsg)
 	}
 
+	fmt.Printf("╠══════════════════════════════════════════════════════════╣\n")
+	fmt.Printf("║  Detail:  taanos history <session_id>                   ║\n")
+	fmt.Printf("║  Resume:  taanos  (last session auto-loaded)            ║\n")
 	fmt.Printf("╚══════════════════════════════════════════════════════════╝\n")
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
 
 func cmdInit() {

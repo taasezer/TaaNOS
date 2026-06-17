@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -78,11 +79,18 @@ func (w *Wizard) Run() error {
 	// Step 5: Configure
 	w.configureSystem(model, sysInfo)
 
+	// Step 6: Initialize all data directories, logs, and history DB
+	w.initializeDataDirs()
+
+	// Step 7: Health check — verify everything works end-to-end
+	w.healthCheck()
+
 	fmt.Println("\n╔══════════════════════════════════════════════════════════╗")
 	fmt.Println("║              ✅ TaaNOS Setup Complete!                   ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════╝")
 	fmt.Printf("\n  Try: taanos install nginx\n")
-	fmt.Printf("  Or:  taanos -m explain update packages\n\n")
+	fmt.Printf("  Or:  taanos -m explain update packages\n")
+	fmt.Printf("  Or:  taanos  (to start the interactive REPL)\n\n")
 
 	return nil
 }
@@ -297,3 +305,71 @@ func (w *Wizard) prompt() string {
 	return strings.TrimSpace(strings.ToLower(input))
 }
 
+// initializeDataDirs creates all required directories and the history database.
+func (w *Wizard) initializeDataDirs() {
+	fmt.Println("\n📂 Initializing data directories...")
+
+	cfg, _ := config.Load()
+
+	// Config directory
+	dataDir := config.DataDir()
+	os.MkdirAll(dataDir, 0755)
+	fmt.Printf("   ✅ Config dir:  %s\n", dataDir)
+
+	// Log directory
+	logDir := cfg.Logging.Directory
+	os.MkdirAll(logDir, 0755)
+	fmt.Printf("   ✅ Log dir:     %s\n", logDir)
+
+	// History database — create with a simple touch
+	dbPath := filepath.Join(logDir, "history.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		f, err := os.Create(dbPath)
+		if err == nil {
+			f.Close()
+			fmt.Printf("   ✅ History DB:  %s\n", dbPath)
+		} else {
+			fmt.Printf("   ⚠️  History DB: %v\n", err)
+		}
+	} else {
+		fmt.Printf("   ✅ History DB:  already exists\n")
+	}
+}
+
+// healthCheck verifies that Ollama is running and the model responds.
+func (w *Wizard) healthCheck() {
+	fmt.Println("\n🏥 Running health check...")
+
+	cfg, _ := config.Load()
+
+	// Test Ollama API
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(cfg.Ollama.Endpoint + "/api/version")
+	if err != nil {
+		fmt.Println("   ⚠️  Ollama API not reachable — start it with: ollama serve")
+		return
+	}
+	resp.Body.Close()
+	fmt.Println("   ✅ Ollama API: online")
+
+	// Test model with a tiny prompt
+	fmt.Printf("   Testing model '%s'...\n", cfg.Ollama.Model)
+	testResp, err := client.Post(
+		cfg.Ollama.Endpoint+"/api/generate",
+		"application/json",
+		strings.NewReader(fmt.Sprintf(`{"model":"%s","prompt":"hi","stream":false,"options":{"num_predict":5}}`, cfg.Ollama.Model)),
+	)
+	if err != nil {
+		fmt.Printf("   ⚠️  Model test failed: %v\n", err)
+		fmt.Printf("   Pull it with: ollama pull %s\n", cfg.Ollama.Model)
+		return
+	}
+	testResp.Body.Close()
+
+	if testResp.StatusCode == 200 {
+		fmt.Printf("   ✅ Model '%s': responding\n", cfg.Ollama.Model)
+	} else {
+		fmt.Printf("   ⚠️  Model returned HTTP %d — try: ollama pull %s\n",
+			testResp.StatusCode, cfg.Ollama.Model)
+	}
+}
