@@ -48,7 +48,7 @@ func NewWizard() *Wizard {
 func (w *Wizard) Run() error {
 	fmt.Println()
 	fmt.Println("╔══════════════════════════════════════════════════════════╗")
-	fmt.Println("║              TaaNOS — First-Time Setup                  ║")
+	fmt.Println("║              TaaNOS - First-Time Setup                   ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════╝")
 	fmt.Println()
 

@@ -6,7 +6,7 @@ Write-Host "╚═════════════════════�
 
 # Define URLs
 $Repo = "taasezer/TaaNOS"
-$DownloadUrl = "https://github.com/$Repo/releases/latest/download/taanos-windows-amd64.exe"
+$DownloadUrl = "https://github.com/$Repo/releases/latest/download/taanos.exe"
 
 # Define Target Directory
 $InstallDir = "$env:USERPROFILE\.taanos\bin"

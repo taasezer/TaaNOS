@@ -62,8 +62,8 @@ func printVersion() {
 func printUsage() {
 	fmt.Println(`
 ╔══════════════════════════════════════════════════════════╗
-║                      TaaNOS CLI                         ║
-║   Deterministic AI-Powered System Operations Engine     ║
+║                      TaaNOS CLI                          ║
+║   Deterministic AI-Powered System Operations Engine      ║
 ╚══════════════════════════════════════════════════════════╝
 
 USAGE:
@@ -267,7 +267,7 @@ func cmdHistory() {
 		for _, s := range sessions {
 			if s.ID == sessionID {
 				fmt.Printf("\n╔══════════════════════════════════════════════════════════╗\n")
-				fmt.Printf("║  Session: %-46s ║\n", s.StartedAt)
+				fmt.Printf("║  Session: %-47s ║\n", s.StartedAt)
 				fmt.Printf("╠══════════════════════════════════════════════════════════╣\n")
 				for _, h := range s.History {
 					icon := "💬"
@@ -280,7 +280,7 @@ func cmdHistory() {
 					fmt.Printf("║ %s %-52s ║\n", icon, truncate(h.Input, 50))
 				}
 				fmt.Printf("╠══════════════════════════════════════════════════════════╣\n")
-				fmt.Printf("║  Resume: taanos  (session memory auto-loaded)           ║\n")
+				fmt.Printf("║  Resume: taanos  (session memory auto-loaded)            ║\n")
 				fmt.Printf("╚══════════════════════════════════════════════════════════╝\n")
 				return
 			}
@@ -291,7 +291,7 @@ func cmdHistory() {
 
 	// List all sessions
 	fmt.Printf("\n╔══════════════════════════════════════════════════════════╗\n")
-	fmt.Printf("║              TaaNOS Chat Sessions (%d)                  ║\n", len(sessions))
+	fmt.Printf("║              TaaNOS Chat Sessions (%-3d)                 ║\n", len(sessions))
 	fmt.Printf("╠══════════════════════════════════════════════════════════╣\n")
 
 	for i := len(sessions) - 1; i >= 0; i-- {
@@ -306,8 +306,8 @@ func cmdHistory() {
 	}
 
 	fmt.Printf("╠══════════════════════════════════════════════════════════╣\n")
-	fmt.Printf("║  Detail:  taanos history <session_id>                   ║\n")
-	fmt.Printf("║  Resume:  taanos  (last session auto-loaded)            ║\n")
+	fmt.Printf("║  Detail:  taanos history <session_id>                    ║\n")
+	fmt.Printf("║  Resume:  taanos  (last session auto-loaded)             ║\n")
 	fmt.Printf("╚══════════════════════════════════════════════════════════╝\n")
 }
 

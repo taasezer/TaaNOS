@@ -23,9 +23,19 @@ if [ "$OS" != "linux" ] && [ "$OS" != "darwin" ]; then
     exit 1
 fi
 
+if [ "$OS" = "linux" ]; then
+    if [ "$ARCH" = "amd64" ]; then
+        BINARY_NAME="taanos-linux"
+    else
+        BINARY_NAME="taanos-arm64"
+    fi
+elif [ "$OS" = "darwin" ]; then
+    BINARY_NAME="taanos-darwin-${ARCH}"
+fi
+
 # Define URLs (Points to the Latest GitHub Release)
 REPO="taasezer/TaaNOS"
-BINARY_URL="https://github.com/$REPO/releases/latest/download/taanos-${OS}-${ARCH}"
+BINARY_URL="https://github.com/$REPO/releases/latest/download/$BINARY_NAME"
 
 TMP_FILE="/tmp/taanos"
 
