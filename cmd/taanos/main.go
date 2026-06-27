@@ -19,6 +19,7 @@ const version = "0.2.0"
 
 func main() {
 	if len(os.Args) < 2 {
+		checkFirstRun()
 		cmdREPL()
 		os.Exit(0)
 	}
@@ -49,6 +50,7 @@ func main() {
 
 	default:
 		// Everything else is treated as natural language input
+		checkFirstRun()
 		cmdRun(os.Args[1:])
 	}
 }
@@ -57,6 +59,13 @@ func printVersion() {
 	fmt.Printf("TaaNOS v%s\n", version)
 	fmt.Println("A deterministic, pipeline-based, local AI-powered CLI system.")
 	fmt.Println("https://github.com/taasezer/TaaNOS")
+}
+
+func checkFirstRun() {
+	if _, err := os.Stat(config.ConfigPath()); os.IsNotExist(err) {
+		fmt.Println("🚀 First time setup detected. Starting initialization wizard...")
+		cmdInit()
+	}
 }
 
 func printUsage() {

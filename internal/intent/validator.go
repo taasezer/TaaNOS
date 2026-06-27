@@ -249,8 +249,16 @@ func normalizeCategory(cat Category) Category {
 		"health":              "system_info",
 	}
 
+	// Pass 1: Exact match
 	for partial, full := range categoryMap {
-		if s == partial || strings.Contains(s, partial) {
+		if s == partial {
+			return full
+		}
+	}
+
+	// Pass 2: Substring match
+	for partial, full := range categoryMap {
+		if strings.Contains(s, partial) {
 			return full
 		}
 	}
@@ -301,8 +309,16 @@ func normalizeAction(act Action) Action {
 		"set": "configure", "edit": "configure", "modify": "configure", "change": "configure", "alter": "configure", "adjust": "configure", "tune": "configure",
 	}
 
+	// Pass 1: Exact match
 	for partial, full := range actionMap {
-		if s == partial || strings.Contains(s, partial) {
+		if s == partial {
+			return full
+		}
+	}
+
+	// Pass 2: Substring match
+	for partial, full := range actionMap {
+		if strings.Contains(s, partial) {
 			return full
 		}
 	}
