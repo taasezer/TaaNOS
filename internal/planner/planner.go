@@ -24,10 +24,21 @@ func (p *Planner) BuildPlan(intentResult *intent.IntentResult, sysCtx *appctx.Sy
 	target := intentResult.Parameters.Target
 	pkgManager := sysCtx.PackageManager.Name
 
+	lookupPkgManager := pkgManager
+	if category == "workspace_setup" {
+		lookupPkgManager = target
+	}
+
 	// Lookup the primary action in the registry
-	primaryDef, err := Lookup(category, action, pkgManager)
+	primaryDef, err := Lookup(category, action, lookupPkgManager)
 	if err != nil {
-		return nil, fmt.Errorf("unsupported operation: %w", err)
+		// If workspace_setup target wasn't found specifically, fallback to generic
+		if category == "workspace_setup" {
+			primaryDef, err = Lookup(category, action, "")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("unsupported operation: %w", err)
+		}
 	}
 
 	plan := &ExecutionPlan{

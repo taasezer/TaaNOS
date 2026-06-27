@@ -10,8 +10,15 @@ const (
 	CategoryServiceManagement Category = "service_management"
 	CategoryFileOperation     Category = "file_operation"
 	CategoryNetwork           Category = "network"
-	CategorySystemInfo        Category = "system_info"
-	CategoryUnknown           Category = "unknown"
+	CategorySystemInfo          Category = "system_info"
+	CategoryDockerManagement    Category = "docker_management"
+	CategorySecurityManagement  Category = "security_management"
+	CategoryProcessManagement   Category = "process_management"
+	CategoryUserManagement      Category = "user_management"
+	CategoryTaskScheduler       Category = "task_scheduler"
+	CategoryTroubleshooting     Category = "troubleshooting"
+	CategoryWorkspaceSetup      Category = "workspace_setup"
+	CategoryUnknown             Category = "unknown"
 )
 
 // ValidCategories is the set of allowed categories.
@@ -20,8 +27,15 @@ var ValidCategories = map[Category]bool{
 	CategoryServiceManagement: true,
 	CategoryFileOperation:     true,
 	CategoryNetwork:           true,
-	CategorySystemInfo:        true,
-	CategoryUnknown:           true,
+	CategorySystemInfo:         true,
+	CategoryDockerManagement:   true,
+	CategorySecurityManagement: true,
+	CategoryProcessManagement:  true,
+	CategoryUserManagement:     true,
+	CategoryTaskScheduler:      true,
+	CategoryTroubleshooting:    true,
+	CategoryWorkspaceSetup:     true,
+	CategoryUnknown:            true,
 }
 
 // Action represents the specific operation to perform.
@@ -41,6 +55,15 @@ const (
 	ActionShow      Action = "show"
 	ActionUpdate    Action = "update"
 	ActionConfigure Action = "configure"
+	ActionAllow     Action = "allow"
+	ActionDeny      Action = "deny"
+	ActionKill      Action = "kill"
+	ActionGrant     Action = "grant"
+	ActionSchedule  Action = "schedule"
+	ActionAnalyze   Action = "analyze"
+	ActionTail      Action = "tail"
+	ActionPrune     Action = "prune"
+	ActionSetup     Action = "setup"
 )
 
 // ValidActions is the set of allowed actions.
@@ -58,6 +81,15 @@ var ValidActions = map[Action]bool{
 	ActionShow:      true,
 	ActionUpdate:    true,
 	ActionConfigure: true,
+	ActionAllow:     true,
+	ActionDeny:      true,
+	ActionKill:      true,
+	ActionGrant:     true,
+	ActionSchedule:  true,
+	ActionAnalyze:   true,
+	ActionTail:      true,
+	ActionPrune:     true,
+	ActionSetup:     true,
 }
 
 // Parameters holds the extracted parameters from the user's intent.

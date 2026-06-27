@@ -343,6 +343,202 @@ func init() {
 	})
 
 	// =========================================================================
+	// DOCKER MANAGEMENT
+	// =========================================================================
+	register(ActionDef{
+		Key:             ActionKey{"docker_management", "start", ""},
+		Description:     "Start a docker container",
+		CommandTemplate: "docker start {target}",
+		RequiresRoot:    true,
+		CanFail:         false,
+		Timeout:         30 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"docker_management", "stop", ""},
+		Description:     "Stop a docker container",
+		CommandTemplate: "docker stop {target}",
+		RequiresRoot:    true,
+		CanFail:         false,
+		Timeout:         30 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"docker_management", "remove", ""},
+		Description:     "Remove a docker container",
+		CommandTemplate: "docker rm -f {target}",
+		RequiresRoot:    true,
+		CanFail:         false,
+		Timeout:         30 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"docker_management", "show", ""},
+		Description:     "Show docker container logs",
+		CommandTemplate: "docker logs {target}",
+		RequiresRoot:    true,
+		CanFail:         true,
+		Timeout:         10 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"docker_management", "prune", ""},
+		Description:     "Remove unused docker containers",
+		CommandTemplate: "docker container prune -f",
+		RequiresRoot:    true,
+		CanFail:         false,
+		Timeout:         60 * time.Second,
+	})
+
+	// =========================================================================
+	// SECURITY MANAGEMENT (UFW)
+	// =========================================================================
+	register(ActionDef{
+		Key:             ActionKey{"security_management", "allow", ""},
+		Description:     "Allow a port through UFW firewall",
+		CommandTemplate: "ufw allow {target}",
+		RequiresRoot:    true,
+		CanFail:         false,
+		Timeout:         10 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"security_management", "deny", ""},
+		Description:     "Deny a port through UFW firewall",
+		CommandTemplate: "ufw deny {target}",
+		RequiresRoot:    true,
+		CanFail:         false,
+		Timeout:         10 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"security_management", "show", ""},
+		Description:     "Show UFW firewall status",
+		CommandTemplate: "ufw status",
+		RequiresRoot:    true,
+		CanFail:         true,
+		Timeout:         5 * time.Second,
+	})
+
+	// =========================================================================
+	// PROCESS MANAGEMENT
+	// =========================================================================
+	register(ActionDef{
+		Key:             ActionKey{"process_management", "kill", ""},
+		Description:     "Kill a process",
+		CommandTemplate: "kill -9 $(pidof {target} || echo {target})",
+		RequiresRoot:    true,
+		CanFail:         true,
+		Timeout:         5 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"process_management", "show", ""},
+		Description:     "Show top memory/cpu consuming processes",
+		CommandTemplate: "ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head -n 10",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         5 * time.Second,
+	})
+
+	// =========================================================================
+	// USER MANAGEMENT
+	// =========================================================================
+	register(ActionDef{
+		Key:             ActionKey{"user_management", "create", ""},
+		Description:     "Create a new user with a home directory",
+		CommandTemplate: "useradd -m {target}",
+		RequiresRoot:    true,
+		CanFail:         false,
+		Timeout:         5 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"user_management", "delete", ""},
+		Description:     "Delete a user and their home directory",
+		CommandTemplate: "userdel -r {target}",
+		RequiresRoot:    true,
+		CanFail:         false,
+		Timeout:         5 * time.Second,
+	})
+
+	// =========================================================================
+	// WORKSPACE SETUP
+	// =========================================================================
+	register(ActionDef{
+		Key:             ActionKey{"workspace_setup", "setup", "python"},
+		Description:     "Setup Python Workspace (venv)",
+		CommandTemplate: "mkdir -p workspace_{target} && cd workspace_{target} && python3 -m venv venv && echo 'Run `source venv/bin/activate` to start.' > README.md",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         30 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"workspace_setup", "setup", "python_backend"},
+		Description:     "Setup Python Backend (FastAPI + venv)",
+		CommandTemplate: "mkdir -p backend_{target} && cd backend_{target} && python3 -m venv venv && echo 'FastAPI project prepared.' > README.md",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         30 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"workspace_setup", "setup", "nodejs"},
+		Description:     "Setup Node.js Workspace",
+		CommandTemplate: "mkdir -p workspace_{target} && cd workspace_{target} && npm init -y",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         30 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"workspace_setup", "setup", "react"},
+		Description:     "Setup React Frontend (Vite)",
+		CommandTemplate: "npx create-vite@latest frontend_{target} --template react",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         60 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"workspace_setup", "setup", "go"},
+		Description:     "Setup Go Workspace",
+		CommandTemplate: "mkdir -p workspace_{target} && cd workspace_{target} && go mod init {target}",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         30 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"workspace_setup", "setup", "dotnet"},
+		Description:     "Setup .NET WebAPI Backend",
+		CommandTemplate: "dotnet new webapi -n {target} && cd {target} && dotnet build",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         60 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"workspace_setup", "setup", "ai"},
+		Description:     "Setup AI / ML Workspace",
+		CommandTemplate: "mkdir -p ai_{target} && cd ai_{target} && python3 -m venv venv && ./venv/bin/pip install jupyterlab langchain torch && echo 'Run `source venv/bin/activate && jupyter lab` to start' > README.md",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         300 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"workspace_setup", "setup", "db"},
+		Description:     "Setup Database (Docker Compose Postgres+Redis)",
+		CommandTemplate: "mkdir -p db_{target} && cd db_{target} && echo 'services:\n  postgres:\n    image: postgres:latest\n    environment:\n      POSTGRES_PASSWORD: root\n    ports:\n      - \"5432:5432\"\n  redis:\n    image: redis:alpine\n    ports:\n      - \"6379:6379\"' > docker-compose.yml && docker-compose up -d",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         120 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"workspace_setup", "setup", "vue"},
+		Description:     "Setup Vue.js Frontend",
+		CommandTemplate: "npm create vue@latest {target} -- --default",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         60 * time.Second,
+	})
+	register(ActionDef{
+		Key:             ActionKey{"workspace_setup", "setup", "nextjs"},
+		Description:     "Setup Next.js Fullstack/Frontend",
+		CommandTemplate: "npx create-next-app@latest {target} --typescript --tailwind --eslint --app --src-dir --import-alias '@/*'",
+		RequiresRoot:    false,
+		CanFail:         true,
+		Timeout:         120 * time.Second,
+	})
+
+	// =========================================================================
 	// SYSTEM INFO (read-only)
 	// =========================================================================
 	register(ActionDef{

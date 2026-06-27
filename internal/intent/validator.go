@@ -157,6 +157,21 @@ func inferCategoryFromText(text string) Category {
 	fileKeywords := []string{"file", "directory", "folder", "delete", "create", "remove file", "path", "move", "copy", "rename", "permission", "chmod"}
 	netKeywords := []string{"port", "network", "firewall", "ip", "dns", "socket", "connection", "ping", "curl", "wget", "http", "ssh"}
 	infoKeywords := []string{"disk", "memory", "cpu", "uptime", "info", "status", "usage", "space", "version", "check", "show", "list", "docker", "kernel", "process", "ram", "temperature", "battery", "os", "system"}
+	dockerKeywords := []string{"docker", "container", "image", "compose"}
+	secKeywords := []string{"firewall", "ufw", "iptables", "security", "allow", "deny", "block"}
+	procKeywords := []string{"process", "kill", "top", "htop", "task manager"}
+	userKeywords := []string{"user", "group", "passwd", "chown", "sudoer"}
+	taskKeywords := []string{"cron", "schedule", "timer", "every day", "every minute"}
+	troubleKeywords := []string{"troubleshoot", "analyze", "log", "crash", "error", "debug"}
+	workspaceKeywords := []string{"setup", "workspace", "react", "nodejs", "python", "backend", "frontend", "environment", "project", "fullstack", "ai", "machine learning", "database", "db", "dotnet", "c#", "nextjs", "vue"}
+
+	if matchesAny(lower, dockerKeywords) { return "docker_management" }
+	if matchesAny(lower, secKeywords) { return "security_management" }
+	if matchesAny(lower, procKeywords) { return "process_management" }
+	if matchesAny(lower, userKeywords) { return "user_management" }
+	if matchesAny(lower, taskKeywords) { return "task_scheduler" }
+	if matchesAny(lower, troubleKeywords) { return "troubleshooting" }
+	if matchesAny(lower, workspaceKeywords) { return "workspace_setup" }
 
 	for _, kw := range pkgKeywords {
 		if strings.Contains(lower, kw) {
@@ -185,6 +200,15 @@ func inferCategoryFromText(text string) Category {
 	}
 
 	return "unknown"
+}
+
+func matchesAny(s string, keywords []string) bool {
+	for _, kw := range keywords {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeCategory maps partial/fuzzy category strings to valid ones.
@@ -247,6 +271,38 @@ func normalizeCategory(cat Category) Category {
 		"monitor":             "system_info",
 		"diagnostic":          "system_info",
 		"health":              "system_info",
+		// New mappings
+		"docker":              "docker_management",
+		"container":           "docker_management",
+		"security":            "security_management",
+		"firewall":            "security_management",
+		"ufw":                 "security_management",
+		"process":             "process_management",
+		"task":                "process_management",
+		"user":                "user_management",
+		"group":               "user_management",
+		"account":             "user_management",
+		"permission":          "user_management",
+		"auth":                "user_management",
+		"cron":                "task_scheduler",
+		"schedule":            "task_scheduler",
+		"timer":               "task_scheduler",
+		"troubleshoot":        "troubleshooting",
+		"debug":               "troubleshooting",
+		"log":                 "troubleshooting",
+		"workspace":           "workspace_setup",
+		"setup":               "workspace_setup",
+		"environment":         "workspace_setup",
+		"backend":             "workspace_setup",
+		"frontend":            "workspace_setup",
+		"project":             "workspace_setup",
+		"fullstack":           "workspace_setup",
+		"ai":                  "workspace_setup",
+		"db":                  "workspace_setup",
+		"database":            "workspace_setup",
+		"dotnet":              "workspace_setup",
+		"nextjs":              "workspace_setup",
+		"vue":                 "workspace_setup",
 	}
 
 	// Pass 1: Exact match
@@ -307,6 +363,16 @@ func normalizeAction(act Action) Action {
 		"upgrade": "update", "patch": "update", "sync": "update",
 		// Configure
 		"set": "configure", "edit": "configure", "modify": "configure", "change": "configure", "alter": "configure", "adjust": "configure", "tune": "configure",
+		// New actions
+		"allow": "allow", "permit": "allow", "accept": "allow",
+		"deny": "deny", "reject": "deny", "block": "deny", "drop": "deny",
+		"kill": "kill", "force close": "kill", "end task": "kill",
+		"grant": "grant", "give": "grant", "assign": "grant",
+		"schedule": "schedule", "plan": "schedule", "cron": "schedule",
+		"analyze": "analyze", "troubleshoot": "analyze", "debug": "analyze", "examine": "analyze", "investigate": "analyze",
+		"tail": "tail", "watch": "tail", "follow": "tail",
+		"prune": "prune", "clean": "prune", "clear": "prune", "purge": "prune",
+		"setup": "setup", "prepare": "setup", "initialize": "setup", "start project": "setup",
 	}
 
 	// Pass 1: Exact match
