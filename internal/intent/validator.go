@@ -111,9 +111,10 @@ func tryPlainTextFallback(raw string) *IntentResult {
 			}
 
 			cat := normalizeCategory(Category(""))
-			if action == "install" || action == "remove" || action == "update" {
+			switch action {
+			case "install", "remove", "update":
 				cat = "package_management"
-			} else if action == "start" || action == "stop" || action == "restart" || action == "enable" || action == "disable" {
+			case "start", "stop", "restart", "enable", "disable":
 				cat = "service_management"
 			}
 
@@ -256,7 +257,6 @@ func normalizeCategory(cat Category) Category {
 		// Network
 		"net":                 "network",
 		"networking":          "network",
-		"firewall":            "network",
 		"port":                "network",
 		"dns":                 "network",
 		"connection":          "network",
@@ -340,13 +340,13 @@ func normalizeAction(act Action) Action {
 	// Comprehensive fuzzy matching
 	actionMap := map[string]Action{
 		// Install
-		"add": "install", "setup": "install", "deploy": "install", "download": "install", "get": "install", "fetch": "install", "pull": "install",
+		"add": "install", "deploy": "install", "download": "install", "get": "install", "fetch": "install", "pull": "install",
 		// Remove
-		"uninstall": "remove", "purge": "remove", "erase": "remove", "drop": "remove", "clean": "remove",
+		"uninstall": "remove", "purge": "remove", "erase": "remove", "drop": "remove",
 		// Start
 		"begin": "start", "launch": "start", "run": "start", "open": "start", "init": "start", "boot": "start",
 		// Stop
-		"halt": "stop", "kill": "stop", "terminate": "stop", "end": "stop", "close": "stop", "shutdown": "stop",
+		"halt": "stop", "terminate": "stop", "end": "stop", "close": "stop", "shutdown": "stop",
 		// Restart
 		"reboot": "restart", "reload": "restart", "reset": "restart", "refresh": "restart",
 		// Enable/Disable
@@ -357,7 +357,7 @@ func normalizeAction(act Action) Action {
 		// List/Show
 		"ls": "list", "dir": "list", "find": "list", "search": "list", "enumerate": "list",
 		"display": "show", "view": "show", "print": "show", "cat": "show", "read": "show", "info": "show",
-		"status": "show", "check": "show", "verify": "show", "inspect": "show", "describe": "show", "examine": "show",
+		"status": "show", "check": "show", "verify": "show", "inspect": "show", "describe": "show",
 		"choose": "show", "select": "show", "query": "show", "lookup": "show", "monitor": "show",
 		// Update
 		"upgrade": "update", "patch": "update", "sync": "update",
@@ -365,13 +365,13 @@ func normalizeAction(act Action) Action {
 		"set": "configure", "edit": "configure", "modify": "configure", "change": "configure", "alter": "configure", "adjust": "configure", "tune": "configure",
 		// New actions
 		"allow": "allow", "permit": "allow", "accept": "allow",
-		"deny": "deny", "reject": "deny", "block": "deny", "drop": "deny",
+		"deny": "deny", "reject": "deny", "block": "deny",
 		"kill": "kill", "force close": "kill", "end task": "kill",
 		"grant": "grant", "give": "grant", "assign": "grant",
 		"schedule": "schedule", "plan": "schedule", "cron": "schedule",
 		"analyze": "analyze", "troubleshoot": "analyze", "debug": "analyze", "examine": "analyze", "investigate": "analyze",
 		"tail": "tail", "watch": "tail", "follow": "tail",
-		"prune": "prune", "clean": "prune", "clear": "prune", "purge": "prune",
+		"prune": "prune", "clean": "prune", "clear": "prune",
 		"setup": "setup", "prepare": "setup", "initialize": "setup", "start project": "setup",
 	}
 

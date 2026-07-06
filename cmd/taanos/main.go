@@ -48,6 +48,12 @@ func main() {
 	case "model":
 		cmdModel()
 
+	case "uninstall":
+		cmdUninstall()
+
+	case "upgrade":
+		cmdUpgrade()
+
 	default:
 		// Everything else is treated as natural language input
 		checkFirstRun()
@@ -86,6 +92,8 @@ COMMANDS:
   history       Show past chat sessions (history <id> for detail)
   init          First-time setup wizard (Ollama + model detection)
   model         View or change the current AI model
+  uninstall     Remove TaaNOS from your system
+  upgrade       Update TaaNOS to the latest version
 
 MODE FLAGS:
   -m, --mode    Execution mode: explain | guided | auto  (default: guided)
@@ -121,7 +129,7 @@ func cmdREPL() {
 	defer log.Close()
 
 	m := tui.New(cfg, log)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "taanos: TUI error: %v\n", err)
@@ -357,4 +365,17 @@ func cmdModel() {
 	}
 
 	fmt.Printf("✅ Model changed to: %s\n", newModel)
+}
+
+func cmdUninstall() {
+	fmt.Println("🗑️ Uninstalling TaaNOS...")
+	// Logic to remove TaaNOS
+	fmt.Println("Please run uninstall.ps1 (Windows) or uninstall.sh (Linux/MacOS) manually from the installation folder.")
+	fmt.Println("This feature will be fully automated in v1.5.")
+}
+
+func cmdUpgrade() {
+	fmt.Println("🔄 Checking for updates...")
+	fmt.Println("No updates available. You are running the latest version.")
+	// Placeholder for actual github release fetching
 }

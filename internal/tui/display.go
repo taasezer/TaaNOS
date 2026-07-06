@@ -11,11 +11,6 @@ import (
 // Display styles for rich pipeline output
 var (
 	// Cards
-	cardStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#333333")).
-		Padding(0, 1).
-		MarginTop(1)
 
 	intentCardStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

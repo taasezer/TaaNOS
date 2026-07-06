@@ -41,28 +41,28 @@ type warmupDoneMsg struct{}
 type state int
 
 const (
-	stateIdle     state = iota
+	stateIdle state = iota
 	stateThinking
-	stateConfirm  // waiting for y/n to execute commands
+	stateConfirm // waiting for y/n to execute commands
 )
 
 // Model is the bubbletea model for the TaaNOS interactive REPL.
 type Model struct {
-	textInput      textinput.Model
-	spinner        spinner.Model
-	state          state
-	cfg            *config.Config
-	log            *logger.Logger
-	history        []historyEntry
-	conversation   []ConversationEntry // session memory for AI context
-	pendingCmds    []string            // commands waiting for y/n approval
-	pendingInput   string              // original input for pending commands
-	scrollOffset   int                 // 0 = bottom (latest), positive = scrolled up
-	showWelcome    bool                // show welcome banner until first input
-	width          int
-	height         int
-	quitting       bool
-	currentInput   string
+	textInput    textinput.Model
+	spinner      spinner.Model
+	state        state
+	cfg          *config.Config
+	log          *logger.Logger
+	history      []historyEntry
+	conversation []ConversationEntry // session memory for AI context
+	pendingCmds  []string            // commands waiting for y/n approval
+	pendingInput string              // original input for pending commands
+	scrollOffset int                 // 0 = bottom (latest), positive = scrolled up
+	showWelcome  bool                // show welcome banner until first input
+	width        int
+	height       int
+	quitting     bool
+	currentInput string
 }
 
 // execDoneMsg is sent when command execution finishes.
@@ -77,7 +77,7 @@ type historyEntry struct {
 	input      string
 	output     string
 	isErr      bool
-	isPipeline bool   // true if output is from AI pipeline (needs rich formatting)
+	isPipeline bool // true if output is from AI pipeline (needs rich formatting)
 	time       string
 }
 
@@ -93,11 +93,7 @@ var (
 	textColor   = lipgloss.Color("#C0C0C0")
 	bgDark      = lipgloss.Color("#1a1a2e")
 
-	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(brandColor).
-			Background(bgDark).
-			Padding(0, 1)
+
 
 	modelStyle = lipgloss.NewStyle().
 			Foreground(warnColor).
@@ -126,52 +122,98 @@ var (
 	outputStyle = lipgloss.NewStyle().
 			Foreground(textColor)
 
-	borderStyle = lipgloss.NewStyle().
-			Foreground(dimColor)
+
 
 	cmdStyle = lipgloss.NewStyle().
 			Foreground(brandColor)
 
-	helpKeyStyle = lipgloss.NewStyle().
-			Foreground(warnColor).
-			Bold(true)
 
-	helpDescStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#888888"))
-
-	// Welcome panel styles
-	welcomeTitleStyle = lipgloss.NewStyle().
-				Foreground(brandColor).
-				Bold(true)
-
-	tipsTitleStyle = lipgloss.NewStyle().
-			Foreground(okColor).
-			Bold(true)
-
-	activityTitleStyle = lipgloss.NewStyle().
-				Foreground(warnColor).
-				Bold(true)
-
-	penguinStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#00B8D4"))
 
 	footerStyle = lipgloss.NewStyle().
 			Foreground(dimColor)
+
+	versionStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E0E0E0")).
+			Bold(true)
+
+	pathStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888"))
 
 	separatorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#333333"))
 )
 
-// penguin returns the TaaNOS ASCII penguin mascot.
-func penguin() string {
-	return penguinStyle.Render(`    .---.
-   /     \
-   \.@-@./
-   /` + "`" + `\_/` + "`" + `\
-  //  _  \\
- | \     )|_
-/` + "`" + `\_` + "`" + `>  <_/ \
-\__/'---'\__/`)
+// capybara builds a colored capybara logo
+func capybara() string {
+	colors := map[rune]lipgloss.TerminalColor{
+		'D': lipgloss.Color("#333333"), // Dark outline
+		'B': lipgloss.Color("#8B5A2B"), // Brown body
+		'L': lipgloss.Color("#D68A59"), // Light brown/snout
+		'_': lipgloss.NoColor{},        // Transparent
+	}
+
+	raw := `
+⬜⬜⬜⬜⬛⬛⬜⬜⬜⬜⬜⬜⬜⬜
+⬜⬜⬜⬛🟫🟫⬛⬛⬛⬛⬛⬜⬜⬜
+⬜⬜⬜⬛🟧🟫⬛🟫🟫🟫🟧⬛⬜⬜
+⬜⬜⬛🟫🟫🟫🟫⬛🟫🟫🟧⬛⬜⬜
+⬜⬛🟫🟫🟫🟫🟫🟫🟫🟫🟧⬛⬜⬜
+⬛🟫🟫🟧🟫🟫🟫🟫🟫🟫⬛⬜⬜⬜
+⬛🟫🟫🟫🟫🟫🟫🟫🟫🟫⬛⬜⬜⬜
+⬛🟫🟫🟧🟫🟫🟫🟫🟫🟫⬛⬜⬜⬜
+⬛🟫🟫🟧🟫🟧🟫🟫🟫⬛⬜⬜⬜⬜
+⬜⬛🟫🟫⬛⬛🟫🟧🟫⬛⬜⬜⬜⬜`
+
+	raw = strings.Trim(raw, "\n\r")
+	lines := strings.Split(raw, "\n")
+	for i := range lines {
+		lines[i] = strings.ReplaceAll(lines[i], "⬜", "_")
+		lines[i] = strings.ReplaceAll(lines[i], "⬛", "D")
+		lines[i] = strings.ReplaceAll(lines[i], "🟫", "B")
+		lines[i] = strings.ReplaceAll(lines[i], "🟧", "L")
+	}
+
+	var b strings.Builder
+	for i := 0; i < len(lines); i += 2 {
+		topRow := lines[i]
+		botRow := ""
+		if i+1 < len(lines) {
+			botRow = lines[i+1]
+		}
+		for j := 0; j < len(topRow); j++ {
+			topP := rune(topRow[j])
+			botP := rune('_')
+			if j < len(botRow) {
+				botP = rune(botRow[j])
+			}
+
+			if topP == '_' && botP == '_' {
+				b.WriteString(" ")
+				continue
+			}
+
+			style := lipgloss.NewStyle()
+			char := "▀"
+
+			if topP != '_' {
+				style = style.Foreground(colors[topP])
+			} else {
+				char = "▄"
+			}
+			if botP != '_' {
+				if char == "▀" {
+					style = style.Background(colors[botP])
+				} else {
+					style = style.Foreground(colors[botP])
+				}
+			}
+
+			b.WriteString(style.Render(char))
+		}
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // New creates a new REPL model.
@@ -194,9 +236,9 @@ func New(cfg *config.Config, log *logger.Logger) Model {
 	if last := LoadLastSession(); last != nil {
 		// Show a session separator
 		prevHistory = append(prevHistory, historyEntry{
-			input: "📂 Previous session (" + last.StartedAt + ")",
+			input:  "📂 Previous session (" + last.StartedAt + ")",
 			output: fmt.Sprintf("%d messages", len(last.History)),
-			time: last.ID,
+			time:   last.ID,
 		})
 		// Load last 5 entries as summary
 		start := 0
@@ -320,7 +362,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case tea.KeyEnter:
-			m.scrollOffset = 0  // reset scroll on new input
+			m.scrollOffset = 0    // reset scroll on new input
 			m.showWelcome = false // hide welcome banner after first interaction
 			if m.state != stateIdle {
 				return m, nil
@@ -395,9 +437,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case lower == "mode":
 				m.history = append(m.history, historyEntry{
-					input: input,
+					input:  input,
 					output: fmt.Sprintf("Current mode: %s\nAvailable: explain, guided, auto", m.cfg.Execution.DefaultMode),
-					time: time.Now().Format("15:04:05"),
+					time:   time.Now().Format("15:04:05"),
 				})
 				return m, nil
 
@@ -427,15 +469,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Try instant local match first (0ms)
 			if result := tryLocalMatch(input); result != nil {
 				var out strings.Builder
-				out.WriteString(fmt.Sprintf("\n✅ Intent Extracted\n"))
+				out.WriteString("\n✅ Intent Extracted\n")
 				out.WriteString(fmt.Sprintf("   Description: %s\n", result.Intent))
 				out.WriteString(fmt.Sprintf("   Category:    %s\n", result.Category))
 				out.WriteString(fmt.Sprintf("   Action:      %s\n", result.Action))
 				out.WriteString(fmt.Sprintf("   Target:      %s\n", result.Parameters.Target))
-				out.WriteString(fmt.Sprintf("   Confidence:  100%%\n"))
-				out.WriteString(fmt.Sprintf("   Time:        0ms (local)\n"))
+				out.WriteString("   Confidence:  100%\n")
+				out.WriteString("   Time:        0ms (local)\n")
 				if len(result.SuggestedCommands) > 0 {
-					out.WriteString(fmt.Sprintf("\n💡 Suggested Commands:\n"))
+					out.WriteString("\n💡 Suggested Commands:\n")
 					for i, cmd := range result.SuggestedCommands {
 						out.WriteString(fmt.Sprintf("   %d. %s\n", i+1, cmd))
 					}
@@ -562,14 +604,19 @@ func (m Model) View() string {
 	var b strings.Builder
 	w := min(m.width, 100)
 
-	// ── Top header bar ──
-	header := headerStyle.Render(" TaaNOS v0.2.0 ")
-	model := modelStyle.Render(fmt.Sprintf(" %s ", m.cfg.Ollama.Model))
-	b.WriteString("\n  " + header + "  " + model + "\n")
-
-	// ── Welcome banner (shown only until first interaction) ──
+	// ── Top header bar (Claude Code Style) ──
 	if m.showWelcome {
-		b.WriteString(m.renderWelcome(w))
+		cwd, _ := os.Getwd()
+		logo := capybara()
+
+		info := fmt.Sprintf("%s\n%s\n%s",
+			versionStyle.Render("TaaNOS v1.5.0"),
+			modelStyle.Render(m.cfg.Ollama.Model),
+			pathStyle.Render(cwd))
+
+		header := lipgloss.JoinHorizontal(lipgloss.Top, logo, "   ", info)
+
+		b.WriteString("\n" + lipgloss.NewStyle().MarginLeft(2).Render(header) + "\n\n")
 	}
 
 	// ── Separator ──
@@ -589,7 +636,12 @@ func (m Model) View() string {
 				}
 			}
 		} else {
-			lines := strings.Split(entry.output, "\n")
+			w := m.width - 8
+			if w < 10 {
+				w = 10
+			}
+			wrapped := lipgloss.NewStyle().Width(w).Render(entry.output)
+			lines := strings.Split(wrapped, "\n")
 			for _, line := range lines {
 				if entry.isErr {
 					historyLines = append(historyLines, "  "+errorStyle.Render("  ✗ "+line))
@@ -661,82 +713,8 @@ func (m Model) View() string {
 	}
 
 	// ── Footer bar ──
-	footer := footerStyle.Render("  ? help  •  ESC cancel  •  PgUp/PgDn scroll")
+	footer := footerStyle.Render("  ? for shortcuts · ↵ for agents")
 	b.WriteString(footer + "\n")
-
-	return b.String()
-}
-
-// renderWelcome builds the Claude Code-style welcome banner with penguin.
-func (m Model) renderWelcome(w int) string {
-	var b strings.Builder
-
-	peng := penguin()
-	pengLines := strings.Split(peng, "\n")
-
-	// Right panel: tips + recent activity
-	tips := []string{
-		tipsTitleStyle.Render("Getting started"),
-		dimStyle.Render("  Type any command in natural language"),
-		dimStyle.Render("  install nginx, check disk space, ..."),
-		dimStyle.Render("  Or just chat — merhaba, nasılsın?"),
-		"",
-		activityTitleStyle.Render("Recent activity"),
-	}
-
-	// Load recent sessions
-	sessions, _ := LoadSessions()
-	if len(sessions) > 0 {
-		count := 3
-		if len(sessions) < count {
-			count = len(sessions)
-		}
-		for i := len(sessions) - count; i < len(sessions); i++ {
-			s := sessions[i]
-			msg := ""
-			if len(s.History) > 0 {
-				msg = s.History[len(s.History)-1].Input
-				if len(msg) > 40 {
-					msg = msg[:37] + "..."
-				}
-			}
-			tips = append(tips, dimStyle.Render(fmt.Sprintf("  %s  %s", s.StartedAt[:16], msg)))
-		}
-	} else {
-		tips = append(tips, dimStyle.Render("  No sessions yet — start chatting!"))
-	}
-
-	// Welcome title centered above penguin
-	b.WriteString("\n")
-	b.WriteString("  " + welcomeTitleStyle.Render("Welcome back!") + "\n\n")
-
-	// Merge penguin (left) + tips (right)
-	maxLines := len(pengLines)
-	if len(tips) > maxLines {
-		maxLines = len(tips)
-	}
-	penguinWidth := 22
-
-	for i := 0; i < maxLines; i++ {
-		left := ""
-		if i < len(pengLines) {
-			left = pengLines[i]
-		}
-		// Pad left column
-		for len(left) < penguinWidth {
-			left += " "
-		}
-
-		right := ""
-		if i < len(tips) {
-			right = tips[i]
-		}
-
-		b.WriteString("  " + left + "  " + right + "\n")
-	}
-
-	// Model info line
-	b.WriteString("\n  " + dimStyle.Render(fmt.Sprintf("  %s • %s", m.cfg.Ollama.Model, m.cfg.Ollama.Endpoint)) + "\n\n")
 
 	return b.String()
 }

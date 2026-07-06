@@ -31,4 +31,6 @@ jobs:
             taanos-linux
             taanos-arm64
             taanos.exe
+            taanos-darwin-amd64
+            taanos-darwin-arm64
           generate_release_notes: true
