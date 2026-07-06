@@ -1,3 +1,7 @@
+<img width="1254" height="1254" alt="ChatGPT Image 6 Tem 2026 20_18_45" src="https://github.com/user-attachments/assets/e2f9e785-d0ed-4dae-bbb6-dacb96732ecd" />
+
+
+
 # TaaNOS
 **A Deterministic, Pipeline-Based Local AI-Powered CLI System**
 
