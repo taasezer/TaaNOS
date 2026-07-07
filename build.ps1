@@ -48,4 +48,26 @@ if ($LASTEXITCODE -ne 0) { Write-Host "Failed to build macOS amd64!" -Foreground
 $env:GOOS=""
 $env:GOARCH=""
 
+# 5. Package for Linux (App Bundle)
+Write-Host "-> Packaging Linux Bundle..." -ForegroundColor Cyan
+if (Test-Path "install-linux.sh") {
+    $zipPath = "bin/TaaNOS-Linux.zip"
+    if (Test-Path $zipPath) { Remove-Item $zipPath }
+    
+    # Create a temporary staging directory
+    $staging = "bin/TaaNOS-Linux"
+    if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
+    New-Item -ItemType Directory -Path $staging | Out-Null
+    
+    # Copy files
+    Copy-Item "bin/taanos-linux-amd64" "$staging/"
+    Copy-Item "install-linux.sh" "$staging/"
+    if (Test-Path "icon.png") { Copy-Item "icon.png" "$staging/" }
+    
+    # Compress
+    Compress-Archive -Path "$staging/*" -DestinationPath $zipPath
+    Remove-Item -Recurse -Force $staging
+    Write-Host "✅ Created Linux Bundle: $zipPath" -ForegroundColor Green
+}
+
 Write-Host "✅ All builds completed successfully! Check the 'bin' folder." -ForegroundColor Green
