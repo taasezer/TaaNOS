@@ -59,12 +59,12 @@ func BuildConversationPrompt(history []ConversationEntry, currentInput string) s
 			content = content[:80] + "..."
 		}
 		if entry.Role == "user" {
-			b.WriteString("User: " + content + "\n")
+			fmt.Fprintf(&b, "User: %s\n", content)
 		} else {
-			b.WriteString("AI: " + content + "\n")
+			fmt.Fprintf(&b, "AI: %s\n", content)
 		}
 	}
-	b.WriteString("\nUser: " + currentInput)
+	fmt.Fprintf(&b, "\nUser: %s", currentInput)
 	return b.String()
 }
 

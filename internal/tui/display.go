@@ -156,7 +156,7 @@ func FormatPipelineOutput(raw string, width int) string {
 	// Render intent card
 	if len(intentLines) > 0 {
 		var card strings.Builder
-		card.WriteString(intentTitleStyle.Render("✦ Intent Extracted") + "\n")
+		fmt.Fprintf(&card, "%s\n", intentTitleStyle.Render("✦ Intent Extracted"))
 
 		for _, line := range intentLines {
 			parts := strings.SplitN(line, ":", 2)
@@ -164,44 +164,42 @@ func FormatPipelineOutput(raw string, width int) string {
 				label := strings.TrimSpace(parts[0])
 				value := strings.TrimSpace(parts[1])
 
-				// Style confidence by value
 				if label == "Confidence" {
 					value = styleConfidence(value)
 				}
 
-				card.WriteString(labelStyle.Render(label) + " " + valueStyle.Render(value) + "\n")
+				fmt.Fprintf(&card, "%s %s\n", labelStyle.Render(label), valueStyle.Render(value))
 			} else {
-				card.WriteString(valueStyle.Render(line) + "\n")
+				fmt.Fprintf(&card, "%s\n", valueStyle.Render(line))
 			}
 		}
 
 		styled := intentCardStyle.Width(cardWidth).Render(card.String())
-		result.WriteString(styled + "\n")
+		fmt.Fprintf(&result, "%s\n", styled)
 	}
 
 	// Render suggested commands card
 	if len(cmdLines) > 0 {
 		var card strings.Builder
-		card.WriteString(cmdTitleStyle.Render("💡 Suggested Commands") + "\n")
+		fmt.Fprintf(&card, "%s\n", cmdTitleStyle.Render("💡 Suggested Commands"))
 
 		for _, line := range cmdLines {
-			// Parse "1. command" format
 			cleaned := strings.TrimSpace(line)
 			re := regexp.MustCompile(`^\d+\.\s*(.+)$`)
 			if matches := re.FindStringSubmatch(cleaned); len(matches) > 1 {
-				card.WriteString("  " + cmdItemStyle.Render("▸ "+matches[1]) + "\n")
+				fmt.Fprintf(&card, "  %s\n", cmdItemStyle.Render("▸ "+matches[1]))
 			} else if cleaned != "" {
-				card.WriteString("  " + cmdItemStyle.Render("▸ "+cleaned) + "\n")
+				fmt.Fprintf(&card, "  %s\n", cmdItemStyle.Render("▸ "+cleaned))
 			}
 		}
 
 		styled := cmdCardStyle.Width(cardWidth).Render(card.String())
-		result.WriteString(styled + "\n")
+		fmt.Fprintf(&result, "%s\n", styled)
 	}
 
 	// Render warnings
 	for _, w := range warningLines {
-		result.WriteString(warningStyle.Render("  "+w) + "\n")
+		fmt.Fprintf(&result, "%s\n", warningStyle.Render("  "+w))
 	}
 
 	// Render stage info
@@ -209,12 +207,12 @@ func FormatPipelineOutput(raw string, width int) string {
 		if s == "" {
 			continue
 		}
-		result.WriteString(stageStyle.Render("  "+s) + "\n")
+		fmt.Fprintf(&result, "%s\n", stageStyle.Render("  "+s))
 	}
 
 	// Render execution results
 	for _, e := range execLines {
-		result.WriteString("  " + e + "\n")
+		fmt.Fprintf(&result, "  %s\n", e)
 	}
 
 	return result.String()

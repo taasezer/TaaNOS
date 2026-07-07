@@ -27,9 +27,10 @@ type ModelRecommendation struct {
 var modelTiers = []ModelRecommendation{
 	{"tinyllama", 600, 0, "Tiny model — works on any system (< 2GB RAM)"},
 	{"phi3:mini", 1500, 2048, "Small model — good for 2-4GB RAM systems"},
+	{"gemma:2b", 2000, 4096, "Great lightweight model - good for 4GB RAM"},
 	{"llama3.2", 2300, 4096, "Standard model — recommended for 4-8GB RAM"},
 	{"llama3.1", 4700, 8192, "Full model — best quality, needs 8GB+ RAM"},
-	{"gemma4:31b-cloud", 0, 0, "Cloud model — fastest, best accuracy, no local resources needed"},
+	{"gemma2-cloud", 0, 0, "Cloud model — fastest, best accuracy, no local resources needed"},
 }
 
 // Wizard handles first-run setup: Ollama detection, VM detection, model recommendation.

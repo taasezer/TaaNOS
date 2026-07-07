@@ -6,12 +6,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -50,6 +52,8 @@ const (
 type Model struct {
 	textInput    textinput.Model
 	spinner      spinner.Model
+	vp           viewport.Model
+	ready        bool
 	state        state
 	cfg          *config.Config
 	log          *logger.Logger
@@ -57,12 +61,10 @@ type Model struct {
 	conversation []ConversationEntry // session memory for AI context
 	pendingCmds  []string            // commands waiting for y/n approval
 	pendingInput string              // original input for pending commands
-	scrollOffset int                 // 0 = bottom (latest), positive = scrolled up
-	showWelcome  bool                // show welcome banner until first input
-	width        int
-	height       int
 	quitting     bool
 	currentInput string
+	width        int
+	height       int
 }
 
 // execDoneMsg is sent when command execution finishes.
@@ -91,8 +93,6 @@ var (
 	okColor     = lipgloss.Color("#51CF66")
 	dimColor    = lipgloss.Color("#555555")
 	textColor   = lipgloss.Color("#C0C0C0")
-	bgDark      = lipgloss.Color("#1a1a2e")
-
 
 
 	modelStyle = lipgloss.NewStyle().
@@ -255,15 +255,18 @@ func New(cfg *config.Config, log *logger.Logger) Model {
 		prevConversation = last.Conversation
 	}
 
+	vp := viewport.New(80, 24)
+	vp.SetContent("Welcome to TaaNOS! Start chatting...\n")
+
 	return Model{
 		textInput:    ti,
 		spinner:      s,
+		vp:           vp,
 		state:        stateIdle,
 		cfg:          cfg,
 		log:          log,
 		history:      prevHistory,
 		conversation: prevConversation,
-		showWelcome:  true,
 		width:        80,
 		height:       24,
 	}
@@ -274,25 +277,30 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		cmds []tea.Cmd
+	)
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.textInput.Width = min(msg.Width-6, 120)
-		return m, nil
-
-	case tea.MouseMsg:
-		switch msg.Type {
-		case tea.MouseWheelUp:
-			m.scrollOffset += 3
-			return m, nil
-		case tea.MouseWheelDown:
-			m.scrollOffset -= 3
-			if m.scrollOffset < 0 {
-				m.scrollOffset = 0
-			}
-			return m, nil
+		
+		headerHeight := 10 // approximate height of capybara + status + separator
+		footerHeight := 3  // prompt line + separator + footer
+		verticalMarginHeight := headerHeight + footerHeight
+		
+		if !m.ready {
+			m.vp = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
+			m.vp.SetContent(m.renderHistory())
+			m.vp.GotoBottom()
+			m.ready = true
+		} else {
+			m.vp.Width = msg.Width
+			m.vp.Height = msg.Height - verticalMarginHeight
 		}
+		return m, nil
 
 	case tea.KeyMsg:
 		// Handle confirm state — y/n for command approval
@@ -338,32 +346,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 
-		case tea.KeyPgUp:
-			m.scrollOffset += 5
-			return m, nil
-		case tea.KeyPgDown:
-			m.scrollOffset -= 5
-			if m.scrollOffset < 0 {
-				m.scrollOffset = 0
-			}
-			return m, nil
-		case tea.KeyUp:
-			if m.state == stateIdle && m.textInput.Value() == "" {
-				m.scrollOffset++
-				return m, nil
-			}
-		case tea.KeyDown:
-			if m.state == stateIdle && m.textInput.Value() == "" {
-				m.scrollOffset--
-				if m.scrollOffset < 0 {
-					m.scrollOffset = 0
-				}
-				return m, nil
-			}
-
 		case tea.KeyEnter:
-			m.scrollOffset = 0    // reset scroll on new input
-			m.showWelcome = false // hide welcome banner after first interaction
 			if m.state != stateIdle {
 				return m, nil
 			}
@@ -385,7 +368,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case lower == "clear" || lower == "cls":
 				m.history = []historyEntry{}
-				return m, nil
 
 			case lower == "help" || lower == "?":
 				m.history = append(m.history, historyEntry{
@@ -393,7 +375,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					output: m.helpText(),
 					time:   time.Now().Format("15:04:05"),
 				})
-				return m, nil
 
 			case lower == "status":
 				m.history = append(m.history, historyEntry{
@@ -401,7 +382,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					output: m.statusText(),
 					time:   time.Now().Format("15:04:05"),
 				})
-				return m, nil
 
 			case lower == "history":
 				m.history = append(m.history, historyEntry{
@@ -409,15 +389,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					output: m.sessionHistoryText(),
 					time:   time.Now().Format("15:04:05"),
 				})
-				return m, nil
 
 			case lower == "model":
+				// Fetch local models
 				m.history = append(m.history, historyEntry{
 					input:  input,
-					output: fmt.Sprintf("Current model: %s", m.cfg.Ollama.Model),
+					output: "Fetching local models...",
 					time:   time.Now().Format("15:04:05"),
 				})
-				return m, nil
+				m.vp.SetContent(m.renderHistory())
+				m.vp.GotoBottom()
+				return m, func() tea.Msg {
+					models, err := getLocalModels(m.cfg.Ollama.Endpoint)
+					if err != nil {
+						return execDoneMsg{input: input, output: "Failed to list models: " + err.Error(), err: err}
+					}
+					out := fmt.Sprintf("Current model: %s\n\nInstalled Local Models:\n%s\n\nCloud Models:\n  - gemma2-cloud\n  - llama3.1-cloud\n\nUse 'model <name>' to switch.", m.cfg.Ollama.Model, strings.Join(models, "\n"))
+					return execDoneMsg{input: input, output: out}
+				}
 
 			case strings.HasPrefix(lower, "model "):
 				newModel := strings.TrimSpace(input[6:])
@@ -433,7 +422,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						time: time.Now().Format("15:04:05"),
 					})
 				}
-				return m, nil
+
+			case strings.HasPrefix(lower, "theme "):
+				newTheme := strings.TrimSpace(lower[6:])
+				if t, ok := Themes[newTheme]; ok {
+					UpdateStyles(t)
+					m.history = append(m.history, historyEntry{
+						input:  input,
+						output: fmt.Sprintf("🎨 Theme switched to: %s", t.Name),
+						time:   time.Now().Format("15:04:05"),
+					})
+				} else {
+					m.history = append(m.history, historyEntry{
+						input:  input,
+						output: "Theme not found. Available: default, ocean, dracula, matrix",
+						isErr:  true,
+						time:   time.Now().Format("15:04:05"),
+					})
+				}
 
 			case lower == "mode":
 				m.history = append(m.history, historyEntry{
@@ -441,17 +447,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					output: fmt.Sprintf("Current mode: %s\nAvailable: explain, guided, auto", m.cfg.Execution.DefaultMode),
 					time:   time.Now().Format("15:04:05"),
 				})
-				return m, nil
 
 			case strings.HasPrefix(lower, "mode "):
 				newMode := strings.TrimSpace(lower[5:])
 				switch newMode {
 				case "explain", "guided", "auto":
 					m.cfg.Execution.DefaultMode = newMode
-					m.history = append(m.history, historyEntry{
-						input: input, output: fmt.Sprintf("✅ Mode changed to: %s", newMode),
-						time: time.Now().Format("15:04:05"),
-					})
+					if err := config.Save(m.cfg); err != nil {
+						m.history = append(m.history, historyEntry{
+							input: input, output: "Failed to save: " + err.Error(),
+							isErr: true, time: time.Now().Format("15:04:05"),
+						})
+					} else {
+						m.history = append(m.history, historyEntry{
+							input: input, output: fmt.Sprintf("✅ Mode changed to: %s", newMode),
+							time: time.Now().Format("15:04:05"),
+						})
+					}
 				default:
 					m.history = append(m.history, historyEntry{
 						input: input, output: "Unknown mode. Use: explain, guided, auto",
@@ -470,16 +482,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if result := tryLocalMatch(input); result != nil {
 				var out strings.Builder
 				out.WriteString("\n✅ Intent Extracted\n")
-				out.WriteString(fmt.Sprintf("   Description: %s\n", result.Intent))
-				out.WriteString(fmt.Sprintf("   Category:    %s\n", result.Category))
-				out.WriteString(fmt.Sprintf("   Action:      %s\n", result.Action))
-				out.WriteString(fmt.Sprintf("   Target:      %s\n", result.Parameters.Target))
+				fmt.Fprintf(&out, "   Description: %s\n", result.Intent)
+				fmt.Fprintf(&out, "   Category:    %s\n", result.Category)
+				fmt.Fprintf(&out, "   Action:      %s\n", result.Action)
+				fmt.Fprintf(&out, "   Target:      %s\n", result.Parameters.Target)
 				out.WriteString("   Confidence:  100%\n")
 				out.WriteString("   Time:        0ms (local)\n")
 				if len(result.SuggestedCommands) > 0 {
 					out.WriteString("\n💡 Suggested Commands:\n")
 					for i, cmd := range result.SuggestedCommands {
-						out.WriteString(fmt.Sprintf("   %d. %s\n", i+1, cmd))
+						fmt.Fprintf(&out, "   %d. %s\n", i+1, cmd)
 					}
 				}
 				m.history = append(m.history, historyEntry{
@@ -525,12 +537,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			entry.output = msg.output
 		}
 		m.history = append(m.history, entry)
+		m.vp.SetContent(m.renderHistory())
+		m.vp.GotoBottom()
 		// Record in conversation memory
 		m.conversation = append(m.conversation,
 			ConversationEntry{Role: "user", Content: msg.input},
 			ConversationEntry{Role: "assistant", Content: "[System command analysis completed]"},
 		)
-		return m, textinput.Blink
+		cmds = append(cmds, textinput.Blink)
+		return m, tea.Batch(cmds...)
 
 	case chatDoneMsg:
 		m.state = stateIdle
@@ -547,12 +562,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			entry.output = msg.response
 		}
 		m.history = append(m.history, entry)
+		m.vp.SetContent(m.renderHistory())
+		m.vp.GotoBottom()
 		// Record in conversation memory
 		m.conversation = append(m.conversation,
 			ConversationEntry{Role: "user", Content: msg.input},
 			ConversationEntry{Role: "assistant", Content: msg.response},
 		)
-		return m, textinput.Blink
+		cmds = append(cmds, textinput.Blink)
+		return m, tea.Batch(cmds...)
 
 	case execDoneMsg:
 		m.state = stateIdle
@@ -569,10 +587,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			entry.output = msg.output
 		}
 		m.history = append(m.history, entry)
+		m.vp.SetContent(m.renderHistory())
+		m.vp.GotoBottom()
 		m.conversation = append(m.conversation,
 			ConversationEntry{Role: "assistant", Content: "Executed: " + msg.output},
 		)
-		return m, textinput.Blink
+		cmds = append(cmds, textinput.Blink)
+		return m, tea.Batch(cmds...)
 
 	case warmupDoneMsg:
 		// Model is now loaded and warm — no visible change
@@ -590,10 +611,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.state == stateIdle {
 		var cmd tea.Cmd
 		m.textInput, cmd = m.textInput.Update(msg)
-		return m, cmd
+		cmds = append(cmds, cmd)
 	}
 
-	return m, nil
+	var vpCmd tea.Cmd
+	m.vp, vpCmd = m.vp.Update(msg)
+	cmds = append(cmds, vpCmd)
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) View() string {
@@ -601,32 +626,64 @@ func (m Model) View() string {
 		return "\n  " + dimStyle.Render("👋 TaaNOS session ended. See you!") + "\n\n"
 	}
 
-	var b strings.Builder
 	w := min(m.width, 100)
 
-	// ── Top header bar (Claude Code Style) ──
-	if m.showWelcome {
-		cwd, _ := os.Getwd()
-		logo := capybara()
+	// ── Top header bar (Fixed Capybara Header) ──
+	cwd, _ := os.Getwd()
+	logo := capybara()
 
-		info := fmt.Sprintf("%s\n%s\n%s",
-			versionStyle.Render("TaaNOS v1.5.0"),
-			modelStyle.Render(m.cfg.Ollama.Model),
-			pathStyle.Render(cwd))
+	info := fmt.Sprintf("%s\n%s\n%s",
+		versionStyle.Render("TaaNOS v1.5.0"),
+		modelStyle.Render(m.cfg.Ollama.Model),
+		pathStyle.Render(cwd))
 
-		header := lipgloss.JoinHorizontal(lipgloss.Top, logo, "   ", info)
+	header := lipgloss.JoinHorizontal(lipgloss.Top, logo, "   ", info)
+	headerStr := "\n" + lipgloss.NewStyle().MarginLeft(2).Render(header) + "\n\n"
+	headerStr += "  " + separatorStyle.Render(strings.Repeat("─", w-4)) + "\n"
 
-		b.WriteString("\n" + lipgloss.NewStyle().MarginLeft(2).Render(header) + "\n\n")
+	// ── Chat history (Viewport) ──
+	bodyStr := m.vp.View() + "\n"
+
+	// ── Bottom Section ──
+	// ── Bottom Section ──
+	var footerStr strings.Builder
+	fmt.Fprintf(&footerStr, "  %s\n", separatorStyle.Render(strings.Repeat("─", w-4)))
+
+	// Input area
+	switch m.state {
+	case stateThinking:
+		fmt.Fprintf(&footerStr, "  %s\n", inputEchoStyle.Render("❯ "+m.currentInput))
+		fmt.Fprintf(&footerStr, "  %s\n", thinkingStyle.Render(fmt.Sprintf("  %s %s thinking...", m.spinner.View(), m.cfg.Ollama.Model)))
+		fmt.Fprintf(&footerStr, "  %s\n", dimStyle.Render("  Press ESC to cancel"))
+	case stateConfirm:
+		fmt.Fprintf(&footerStr, "  %s\n", thinkingStyle.Render("🚀 Execute these commands?"))
+		for i, cmd := range m.pendingCmds {
+			fmt.Fprintf(&footerStr, "  %s\n", cmdStyle.Render(fmt.Sprintf("   %d. %s", i+1, cmd)))
+		}
+		fmt.Fprintf(&footerStr, "  %s execute  %s cancel\n", successStyle.Render("[y]"), errorStyle.Render("[n]"))
+	default:
+		fmt.Fprintf(&footerStr, "  %s\n", m.textInput.View())
 	}
 
-	// ── Separator ──
-	b.WriteString("  " + separatorStyle.Render(strings.Repeat("─", w-4)) + "\n")
+	// Footer bar
+	footer := footerStyle.Render("  ? for shortcuts · ↵ for agents")
+	fmt.Fprintf(&footerStr, "%s\n", footer)
 
-	// ── Chat history ──
+	return lipgloss.JoinVertical(lipgloss.Left, headerStr, bodyStr, footerStr.String())
+}
+
+func (m Model) renderHistory() string {
 	var historyLines []string
+	mentionRegex := regexp.MustCompile(`@([a-zA-Z0-9_.\-\/\\]+)`)
+
 	for _, entry := range m.history {
+		displayInput := entry.input
+		displayInput = mentionRegex.ReplaceAllStringFunc(displayInput, func(s string) string {
+			return lipgloss.NewStyle().Foreground(accentColor).Render(s)
+		})
+
 		historyLines = append(historyLines,
-			"  "+inputEchoStyle.Render("❯ "+entry.input)+"  "+dimStyle.Render(entry.time))
+			"  "+inputEchoStyle.Render("❯ ")+displayInput+"  "+dimStyle.Render(entry.time))
 
 		if entry.isPipeline && !entry.isErr {
 			formatted := FormatPipelineOutput(entry.output, m.width)
@@ -652,71 +709,7 @@ func (m Model) View() string {
 		}
 		historyLines = append(historyLines, "")
 	}
-
-	// ── Scroll window ──
-	welcomeOffset := 0
-	if m.showWelcome {
-		welcomeOffset = 14
-	}
-	maxVisible := m.height - 8 - welcomeOffset
-	if maxVisible < 5 {
-		maxVisible = 5
-	}
-	totalLines := len(historyLines)
-
-	offset := m.scrollOffset
-	maxScroll := totalLines - maxVisible
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if offset > maxScroll {
-		offset = maxScroll
-	}
-
-	endIdx := totalLines - offset
-	if endIdx > totalLines {
-		endIdx = totalLines
-	}
-	startIdx := endIdx - maxVisible
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	if endIdx > startIdx {
-		for _, line := range historyLines[startIdx:endIdx] {
-			b.WriteString(line + "\n")
-		}
-	}
-
-	if m.scrollOffset > 0 {
-		b.WriteString("  " + dimStyle.Render(fmt.Sprintf("  ↑ %d more lines (PgUp/PgDn)", m.scrollOffset)) + "\n")
-	}
-
-	// ── Bottom separator ──
-	b.WriteString("  " + separatorStyle.Render(strings.Repeat("─", w-4)) + "\n")
-
-	// ── Input area ──
-	switch m.state {
-	case stateThinking:
-		b.WriteString("  " + inputEchoStyle.Render("❯ "+m.currentInput) + "\n")
-		b.WriteString("  " + thinkingStyle.Render(fmt.Sprintf("  %s %s thinking...",
-			m.spinner.View(), m.cfg.Ollama.Model)) + "\n")
-		b.WriteString("  " + dimStyle.Render("  Press ESC to cancel") + "\n")
-	case stateConfirm:
-		b.WriteString("  " + thinkingStyle.Render("🚀 Execute these commands?") + "\n")
-		for i, cmd := range m.pendingCmds {
-			b.WriteString("  " + cmdStyle.Render(fmt.Sprintf("   %d. %s", i+1, cmd)) + "\n")
-		}
-		b.WriteString("  " + successStyle.Render("[y]") + " execute  " + errorStyle.Render("[n]") + " cancel\n")
-	default:
-		b.WriteString("  " + m.textInput.View() + "\n")
-	}
-
-	// ── Footer bar ──
-	footer := footerStyle.Render("  ? for shortcuts · ↵ for agents")
-	b.WriteString(footer + "\n")
-
-	return b.String()
+	return strings.Join(historyLines, "\n")
 }
 
 // runPipeline runs the pipeline and captures its stdout output.
@@ -824,12 +817,13 @@ func (m *Model) helpText() string {
 		{"model <name>", "Change AI model"},
 		{"mode", "Show current execution mode"},
 		{"mode <mode>", "Set mode: explain, guided, auto"},
+		{"theme <name>", "Set theme: default, ocean, dracula, matrix"},
 		{"clear, cls", "Clear screen"},
 		{"exit, quit, q", "Exit TaaNOS (saves session)"},
 		{"Ctrl+D", "Exit TaaNOS (saves session)"},
 	}
 	for _, e := range cmds {
-		b.WriteString(fmt.Sprintf("  %-18s %s\n", e.key, e.desc))
+		fmt.Fprintf(&b, "  %-18s %s\n", e.key, e.desc)
 	}
 	b.WriteString("\nKeyboard:\n")
 	keys := []struct{ key, desc string }{
@@ -933,11 +927,29 @@ func (m *Model) runChat(input string) tea.Cmd {
 	history := make([]ConversationEntry, len(m.conversation))
 	copy(history, m.conversation)
 
+	// Extract @mentions and inject context
+	finalInput := input
+	mentionRegex := regexp.MustCompile(`@([a-zA-Z0-9_.\-\/\\]+)`)
+	matches := mentionRegex.FindAllStringSubmatch(input, -1)
+	if len(matches) > 0 {
+		var contexts []string
+		for _, match := range matches {
+			fileName := match[1]
+			content, err := os.ReadFile(fileName)
+			if err == nil {
+				contexts = append(contexts, fmt.Sprintf("<context file=\"%s\">\n%s\n</context>", fileName, string(content)))
+			}
+		}
+		if len(contexts) > 0 {
+			finalInput = input + "\n\n" + strings.Join(contexts, "\n\n")
+		}
+	}
+
 	return func() tea.Msg {
 		response, err := ChatWithHistory(
 			cfg.Ollama.Endpoint,
 			cfg.Ollama.Model,
-			input,
+			finalInput,
 			history,
 			cfg.Ollama.Timeout,
 		)
@@ -950,12 +962,18 @@ func (m *Model) runChat(input string) tea.Cmd {
 
 // warmupModel sends a tiny request on REPL start to pre-load the model.
 func (m *Model) warmupModel() tea.Cmd {
-	cfg := m.cfg
 	return func() tea.Msg {
+		cfg, _ := config.Load()
 		// Send a minimal request to load the model into memory
 		Chat(cfg.Ollama.Endpoint, cfg.Ollama.Model, "hi", 30*time.Second)
 		return warmupDoneMsg{}
 	}
+}
+
+func getLocalModels(endpoint string) ([]string, error) {
+	// Simple mock for now, or actual API call to ollama/api/tags
+	// For example purposes, we return a list of standard local models
+	return []string{"llama3.2", "gemma:2b", "phi3:mini"}, nil
 }
 
 // executeCommands runs approved commands and returns output.
