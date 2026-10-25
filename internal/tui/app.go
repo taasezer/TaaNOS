@@ -969,6 +969,16 @@ func isSystemQuery(input string) bool {
 // runChat sends a conversational message to Ollama with session memory.
 func (m *Model) runChat(input string) tea.Cmd {
 	cfg := m.cfg
+
+	if cfg.Ollama.Model == "offline (0ms)" || cfg.Ollama.Model == "" {
+		return func() tea.Msg {
+			return chatDoneMsg{
+				input: input,
+				err:   fmt.Errorf("⚠️  Ollama veya yerel yapay zeka modeli aktif değil.\n\nSistem 0ms çevrimdışı modda çalışıyor. Doğal dil sohbeti için:\n  • Ollama'yı başlatın: ollama serve\n  • Model yükleyin: ollama pull gemma:2b\n  • Model değiştirin: model <isim>\n\n💡 İpucu: Sistem komutları (update, install, ram, disk vb.) model olmadan da doğrudan 0ms içinde çalışır."),
+			}
+		}
+	}
+
 	history := make([]ConversationEntry, len(m.conversation))
 	copy(history, m.conversation)
 
@@ -1008,9 +1018,13 @@ func (m *Model) runChat(input string) tea.Cmd {
 // warmupModel sends a tiny request on REPL start to pre-load the model.
 func (m *Model) warmupModel() tea.Cmd {
 	return func() tea.Msg {
+		if m.cfg.Ollama.Model == "" || m.cfg.Ollama.Model == "offline (0ms)" {
+			return warmupDoneMsg{}
+		}
 		cfg, _ := config.Load()
-		// Send a minimal request to load the model into memory
-		Chat(cfg.Ollama.Endpoint, cfg.Ollama.Model, "hi", 30*time.Second)
+		if cfg.Ollama.Model != "" && cfg.Ollama.Model != "offline (0ms)" {
+			Chat(cfg.Ollama.Endpoint, cfg.Ollama.Model, "hi", 10*time.Second)
+		}
 		return warmupDoneMsg{}
 	}
 }

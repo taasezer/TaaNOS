@@ -166,19 +166,7 @@ func printVersion() {
 func checkFirstRun() {
 	if _, err := os.Stat(config.ConfigPath()); os.IsNotExist(err) {
 		cfg := config.Default()
-		// Auto-detect existing Ollama models silently (1s timeout)
-		client := &http.Client{Timeout: 1 * time.Second}
-		if resp, err := client.Get(cfg.Ollama.Endpoint + "/api/tags"); err == nil {
-			var data struct {
-				Models []struct {
-					Name string `json:"name"`
-				} `json:"models"`
-			}
-			if json.NewDecoder(resp.Body).Decode(&data) == nil && len(data.Models) > 0 {
-				cfg.Ollama.Model = data.Models[0].Name
-			}
-			resp.Body.Close()
-		}
+		config.AutoDetectModel(cfg)
 		_ = config.Save(cfg)
 	}
 }
