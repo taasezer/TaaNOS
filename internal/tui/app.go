@@ -702,6 +702,19 @@ func (m Model) View() string {
 }
 
 func (m Model) renderHistory() string {
+	if len(m.history) == 0 {
+		var welcome strings.Builder
+		welcome.WriteString("\n")
+		welcome.WriteString("  " + successStyle.Render("● Sistem Hazır") + "  " + dimStyle.Render("Aktif Model: "+m.cfg.Ollama.Model) + "\n\n")
+		welcome.WriteString("  " + lipgloss.NewStyle().Bold(true).Render("💡 TaaNOS ile Neler Yapabilirsiniz?") + "\n")
+		welcome.WriteString("  • Sohbet edin veya soru sorun: " + dimStyle.Render(`"selam", "python scripti yaz", "bu sistem nedir?"`) + "\n")
+		welcome.WriteString("  • Hızlı sistem komutları (0ms yerel): " + dimStyle.Render(`"disk", "ram", "sistemi güncelle", "kur curl"`) + "\n")
+		welcome.WriteString("  • Komutları listelemek için: " + dimStyle.Render(`"help"`) + "\n")
+		welcome.WriteString("  • Çıkış yapmak için: " + dimStyle.Render(`"exit" veya klavyeden Ctrl+D`) + "\n\n")
+		welcome.WriteString("  " + dimStyle.Render("Aşağıdaki satıra yazıp Enter tuşuna basarak hemen başlayabilirsiniz."))
+		return welcome.String()
+	}
+
 	var historyLines []string
 	mentionRegex := regexp.MustCompile(`@([a-zA-Z0-9_.\-\/\\]+)`)
 
