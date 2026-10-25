@@ -2,6 +2,7 @@ package setup
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -30,7 +31,6 @@ var modelTiers = []ModelRecommendation{
 	{"gemma:2b", 2000, 4096, "Great lightweight model - good for 4GB RAM"},
 	{"llama3.2", 2300, 4096, "Standard model — recommended for 4-8GB RAM"},
 	{"llama3.1", 4700, 8192, "Full model — best quality, needs 8GB+ RAM"},
-	{"gemma2-cloud", 0, 0, "Cloud model — fastest, best accuracy, no local resources needed"},
 }
 
 // Wizard handles first-run setup: Ollama detection, VM detection, model recommendation.
@@ -62,9 +62,9 @@ func (w *Wizard) Run() error {
 	if !ollamaInstalled {
 		installed := w.offerOllamaInstall()
 		if !installed {
-			fmt.Println("\n⚠️  Ollama is required for TaaNOS. Install it manually:")
-			fmt.Println("   curl -fsSL https://ollama.com/install.sh | sh")
-			return fmt.Errorf("Ollama not installed")
+			fmt.Println("\n⚠️  Ollama şu anda sistemde bulunamadı.")
+			fmt.Println("   İpucu: TaaNOS'un temel ve sistem komutları (update, disk, ram, kur vb.) Ollama olmadan da çalışır.")
+			fmt.Println("   Yapay zeka modellerini çalıştırmak için daha sonra Ollama kurabilirsiniz: https://ollama.com/download")
 		}
 	}
 
@@ -218,8 +218,56 @@ func (w *Wizard) recommendModel(availableRAMMB int64) *ModelRecommendation {
 	return best
 }
 
+func getInstalledOllamaModels() []string {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("http://localhost:11434/api/tags")
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var data struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil
+	}
+
+	var names []string
+	for _, m := range data.Models {
+		names = append(names, m.Name)
+	}
+	return names
+}
+
 // offerModelSelection lets the user choose a model.
 func (w *Wizard) offerModelSelection(recommended *ModelRecommendation, availableRAM int64) string {
+	installed := getInstalledOllamaModels()
+	if len(installed) > 0 {
+		fmt.Println("🤖 Model Selection (Ready Local Models Found)")
+		fmt.Printf("   Recommended: %s (Already installed in Ollama)\n\n", installed[0])
+		fmt.Println("   Installed models:")
+		for i, name := range installed {
+			marker := "  "
+			if i == 0 {
+				marker = "→ "
+			}
+			fmt.Printf("   %s%d. %-20s (ready)\n", marker, i+1, name)
+		}
+		fmt.Printf("\n   Choose model [1-%d] or press Enter for recommended: ", len(installed))
+		response := w.prompt()
+		if response == "" {
+			return installed[0]
+		}
+		idx, err := strconv.Atoi(response)
+		if err == nil && idx >= 1 && idx <= len(installed) {
+			return installed[idx-1]
+		}
+		return installed[0]
+	}
+
 	fmt.Println("🤖 Model Selection")
 	fmt.Printf("   Recommended: %s (%s)\n\n", recommended.Name, recommended.Description)
 
@@ -252,8 +300,16 @@ func (w *Wizard) offerModelSelection(recommended *ModelRecommendation, available
 	return modelTiers[idx-1].Name
 }
 
-// pullModel downloads the selected model.
+// pullModel downloads the selected model if not already present.
 func (w *Wizard) pullModel(model string) {
+	installed := getInstalledOllamaModels()
+	for _, inst := range installed {
+		if inst == model {
+			fmt.Printf("   ✅ Model '%s' is already installed and ready.\n", model)
+			return
+		}
+	}
+
 	fmt.Printf("\n📥 Pulling model '%s'...\n", model)
 	fmt.Println("   This may take a few minutes depending on your connection.")
 
