@@ -69,8 +69,8 @@ Write-Host "-> Packaging macOS (amd64) Installer..." -ForegroundColor Yellow
 go build -o bin/TaaNOS-Setup-MacOS-amd64 ./cmd/installer
 
 
-# Clean up
-if (Test-Path $payloadPath) { Remove-Item $payloadPath }
+# Clean up (leave empty payload so go test ./... doesn't break)
+Set-Content -Path $payloadPath -Value ""
 $env:GOOS=""
 $env:GOARCH=""
 

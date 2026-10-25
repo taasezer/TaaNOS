@@ -17,7 +17,9 @@ const (
 // Default returns the default configuration.
 func Default() *Config {
 	return &Config{
-		Version: 1,
+		Version:        1,
+		Theme:          "taaos",
+		PackageManager: "auto",
 		Ollama: OllamaConfig{
 			Endpoint:   "http://localhost:11434",
 			Model:      "llama3.2",

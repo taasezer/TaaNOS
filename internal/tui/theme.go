@@ -64,16 +64,29 @@ var (
 		TextColor:   lipgloss.Color("#00FF41"),
 		BgColor:     lipgloss.Color("#0D0208"),
 	}
+
+	ThemeTaaOS = Theme{
+		Name:        "TaaOS",
+		BrandColor:  lipgloss.Color("#D40000"),
+		AccentColor: lipgloss.Color("#FF4444"),
+		WarnColor:   lipgloss.Color("#FFD43B"),
+		ErrColor:    lipgloss.Color("#FF3333"),
+		OkColor:     lipgloss.Color("#51CF66"),
+		DimColor:    lipgloss.Color("#666666"),
+		TextColor:   lipgloss.Color("#EEEEEE"),
+		BgColor:     lipgloss.Color("#0D1117"),
+	}
 )
 
 var Themes = map[string]Theme{
 	"default": ThemeDefault,
+	"taaos":   ThemeTaaOS,
 	"ocean":   ThemeOcean,
 	"dracula": ThemeDracula,
 	"matrix":  ThemeMatrix,
 }
 
-var CurrentTheme = ThemeDefault
+var CurrentTheme = ThemeTaaOS
 
 // UpdateStyles updates the global lipgloss styles based on the current theme.
 func UpdateStyles(t Theme) {

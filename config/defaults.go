@@ -4,12 +4,14 @@ import "time"
 
 // Config is the root configuration structure for TaaNOS.
 type Config struct {
-	Version   int              `yaml:"version"`
-	Ollama    OllamaConfig     `yaml:"ollama"`
-	Execution ExecutionConfig  `yaml:"execution"`
-	Logging   LoggingConfig    `yaml:"logging"`
-	Recovery  RecoveryConfig   `yaml:"recovery"`
-	Safety    SafetyConfig     `yaml:"safety"`
+	Version        int              `yaml:"version"`
+	Theme          string           `yaml:"theme"`
+	PackageManager string           `yaml:"package_manager,omitempty"`
+	Ollama         OllamaConfig     `yaml:"ollama"`
+	Execution      ExecutionConfig  `yaml:"execution"`
+	Logging        LoggingConfig    `yaml:"logging"`
+	Recovery       RecoveryConfig   `yaml:"recovery"`
+	Safety         SafetyConfig     `yaml:"safety"`
 }
 
 // OllamaConfig holds Ollama connection settings.

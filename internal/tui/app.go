@@ -2,8 +2,10 @@ package tui
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -361,36 +363,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Handle REPL commands
 			lower := strings.ToLower(input)
 			switch {
-			case lower == "exit" || lower == "quit" || lower == "q":
+			case lower == "exit" || lower == "quit" || lower == "q" || lower == "/exit" || lower == "/quit" || lower == "/q":
 				SaveSession(m.conversation, m.history)
 				m.quitting = true
 				return m, tea.Quit
 
-			case lower == "clear" || lower == "cls":
+			case lower == "clear" || lower == "cls" || lower == "/clear" || lower == "/cls":
 				m.history = []historyEntry{}
 
-			case lower == "help" || lower == "?":
+			case lower == "help" || lower == "?" || lower == "/help" || lower == "/?":
 				m.history = append(m.history, historyEntry{
 					input:  input,
 					output: m.helpText(),
 					time:   time.Now().Format("15:04:05"),
 				})
 
-			case lower == "status":
+			case lower == "update" || lower == "/update" || lower == "upgrade" || lower == "/upgrade":
+				m.history = append(m.history, historyEntry{
+					input:  input,
+					output: "🔄 TaaNOS güncellemesi için terminalden şu komutu çalıştırabilirsiniz:\n   taanos update\n\n(veya GitHub'dan yeniden çekmeyi zorlamak için: taanos update --force)",
+					time:   time.Now().Format("15:04:05"),
+				})
+
+			case lower == "status" || lower == "/status":
 				m.history = append(m.history, historyEntry{
 					input:  input,
 					output: m.statusText(),
 					time:   time.Now().Format("15:04:05"),
 				})
 
-			case lower == "history":
+			case lower == "history" || lower == "/history":
 				m.history = append(m.history, historyEntry{
 					input:  input,
 					output: m.sessionHistoryText(),
 					time:   time.Now().Format("15:04:05"),
 				})
 
-			case lower == "model":
+			case lower == "model" || lower == "/model" || lower == "mogel" || lower == "/mogel":
 				// Fetch local models
 				m.history = append(m.history, historyEntry{
 					input:  input,
@@ -401,15 +410,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.vp.GotoBottom()
 				return m, func() tea.Msg {
 					models, err := getLocalModels(m.cfg.Ollama.Endpoint)
-					if err != nil {
-						return execDoneMsg{input: input, output: "Failed to list models: " + err.Error(), err: err}
+					if err != nil || len(models) == 0 {
+						out := fmt.Sprintf("Aktif Model: %s\n\n⚠️ Ollama üzerinde model listelenemedi (Ollama çalışıyor mu?).\nModel indirmek için: ollama pull <model>\nModel değiştirmek için: model <isim>", m.cfg.Ollama.Model)
+						return execDoneMsg{input: input, output: out}
 					}
-					out := fmt.Sprintf("Current model: %s\n\nInstalled Local Models:\n%s\n\nCloud Models:\n  - gemma2-cloud\n  - llama3.1-cloud\n\nUse 'model <name>' to switch.", m.cfg.Ollama.Model, strings.Join(models, "\n"))
+					var modelList strings.Builder
+					for _, name := range models {
+						if name == m.cfg.Ollama.Model {
+							fmt.Fprintf(&modelList, "  ● %s (aktif)\n", name)
+						} else {
+							fmt.Fprintf(&modelList, "  ○ %s\n", name)
+						}
+					}
+					out := fmt.Sprintf("Aktif Model: %s\n\nYüklü Ollama Modelleri:\n%s\nGeçiş yapmak için: 'model <isim>'", m.cfg.Ollama.Model, modelList.String())
 					return execDoneMsg{input: input, output: out}
 				}
 
-			case strings.HasPrefix(lower, "model "):
-				newModel := strings.TrimSpace(input[6:])
+			case strings.HasPrefix(lower, "model ") || strings.HasPrefix(lower, "/model ") || strings.HasPrefix(lower, "mogel ") || strings.HasPrefix(lower, "/mogel "):
+				spaceIdx := strings.Index(input, " ")
+				newModel := strings.TrimSpace(input[spaceIdx+1:])
 				m.cfg.Ollama.Model = newModel
 				if err := config.Save(m.cfg); err != nil {
 					m.history = append(m.history, historyEntry{
@@ -423,10 +442,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					})
 				}
 
-			case strings.HasPrefix(lower, "theme "):
-				newTheme := strings.TrimSpace(lower[6:])
+			case lower == "theme" || lower == "/theme":
+				m.history = append(m.history, historyEntry{
+					input:  input,
+					output: fmt.Sprintf("Current theme: %s\nAvailable themes: taaos, default, ocean, dracula, matrix\nUse 'theme <name>' to switch.", m.cfg.Theme),
+					time:   time.Now().Format("15:04:05"),
+				})
+
+			case strings.HasPrefix(lower, "theme ") || strings.HasPrefix(lower, "/theme "):
+				spaceIdx := strings.Index(lower, " ")
+				newTheme := strings.TrimSpace(lower[spaceIdx+1:])
 				if t, ok := Themes[newTheme]; ok {
 					UpdateStyles(t)
+					m.cfg.Theme = newTheme
+					_ = config.Save(m.cfg)
 					m.history = append(m.history, historyEntry{
 						input:  input,
 						output: fmt.Sprintf("🎨 Theme switched to: %s", t.Name),
@@ -435,13 +464,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.history = append(m.history, historyEntry{
 						input:  input,
-						output: "Theme not found. Available: default, ocean, dracula, matrix",
+						output: "Theme not found. Available: taaos, default, ocean, dracula, matrix",
 						isErr:  true,
 						time:   time.Now().Format("15:04:05"),
 					})
 				}
 
-			case lower == "mode":
+			case lower == "mode" || lower == "/mode":
 				m.history = append(m.history, historyEntry{
 					input:  input,
 					output: fmt.Sprintf("Current mode: %s\nAvailable: explain, guided, auto", m.cfg.Execution.DefaultMode),
@@ -633,7 +662,7 @@ func (m Model) View() string {
 	logo := capybara()
 
 	info := fmt.Sprintf("%s\n%s\n%s",
-		versionStyle.Render("TaaNOS v1.5.0"),
+		versionStyle.Render("TaaNOS v"+config.Version),
 		modelStyle.Render(m.cfg.Ollama.Model),
 		pathStyle.Render(cwd))
 
@@ -805,7 +834,7 @@ func (m *Model) runPipeline(input string) tea.Cmd {
 // helpText returns the REPL help text.
 func (m *Model) helpText() string {
 	var b strings.Builder
-	b.WriteString("TaaNOS v0.2.0 — Interactive REPL\n")
+	b.WriteString("TaaNOS v" + config.Version + " — Interactive REPL\n")
 	b.WriteString(strings.Repeat("─", 50) + "\n")
 	b.WriteString("\nCommands:\n")
 	cmds := []struct{ key, desc string }{
@@ -817,7 +846,9 @@ func (m *Model) helpText() string {
 		{"model <name>", "Change AI model"},
 		{"mode", "Show current execution mode"},
 		{"mode <mode>", "Set mode: explain, guided, auto"},
-		{"theme <name>", "Set theme: default, ocean, dracula, matrix"},
+		{"theme", "Show current theme and available themes"},
+		{"theme <name>", "Set theme: taaos, default, ocean, dracula, matrix"},
+		{"update", "Update TaaNOS to the latest version"},
 		{"clear, cls", "Clear screen"},
 		{"exit, quit, q", "Exit TaaNOS (saves session)"},
 		{"Ctrl+D", "Exit TaaNOS (saves session)"},
@@ -837,6 +868,7 @@ func (m *Model) helpText() string {
 	b.WriteString("\nExamples:\n")
 	b.WriteString("  install nginx\n")
 	b.WriteString("  -m explain check disk space\n")
+	b.WriteString("  sistemi güncelle\n")
 	b.WriteString("  merhaba, nasılsın?\n")
 	b.WriteString("\nSession memory: Your chats are saved and auto-loaded on next start.\n")
 	return b.String()
@@ -844,8 +876,8 @@ func (m *Model) helpText() string {
 
 // statusText returns status info.
 func (m *Model) statusText() string {
-	return fmt.Sprintf("Model:    %s\nEndpoint: %s\nMode:     %s\nVersion:  0.2.0",
-		m.cfg.Ollama.Model, m.cfg.Ollama.Endpoint, m.cfg.Execution.DefaultMode)
+	return fmt.Sprintf("Model:    %s\nEndpoint: %s\nMode:     %s\nTheme:    %s\nVersion:  %s",
+		m.cfg.Ollama.Model, m.cfg.Ollama.Endpoint, m.cfg.Execution.DefaultMode, m.cfg.Theme, config.Version)
 }
 
 // sessionHistoryText shows past chat sessions.
@@ -971,9 +1003,27 @@ func (m *Model) warmupModel() tea.Cmd {
 }
 
 func getLocalModels(endpoint string) ([]string, error) {
-	// Simple mock for now, or actual API call to ollama/api/tags
-	// For example purposes, we return a list of standard local models
-	return []string{"llama3.2", "gemma:2b", "phi3:mini"}, nil
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(endpoint + "/api/tags")
+	if err != nil {
+		return nil, fmt.Errorf("Ollama servisine bağlanılamadı: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var data struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for _, m := range data.Models {
+		names = append(names, m.Name)
+	}
+	return names, nil
 }
 
 // executeCommands runs approved commands and returns output.

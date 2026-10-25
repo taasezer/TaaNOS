@@ -96,12 +96,19 @@ func ChatWithHistory(endpoint, model, userInput string, history []ConversationEn
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Post(endpoint+"/api/generate", "application/json", bytes.NewReader(body))
 	if err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "refused") || strings.Contains(errStr, "connectex") || strings.Contains(errStr, "connection reset") {
+			return "", fmt.Errorf("⚠️  Ollama servisine bağlanılamadı (%s)\n\nOllama arka planda çalışmıyor olabilir:\n  • Ollama'yı başlatmak için: 'ollama serve' veya 'taanos init'\n  • Not: Sistem komutları (update, install <paket>, disk, ram, kaldır vb.) Ollama olmadan da 0ms içinde çalışır.", endpoint)
+		}
 		return "", fmt.Errorf("Ollama connection failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusNotFound {
+			return "", fmt.Errorf("⚠️  '%s' modeli Ollama içinde bulunamadı (HTTP 404).\n\n• Yüklü modelleri görmek için: model\n• Model değiştirmek için: model <isim> (örn: 'model gemma4:31b-cloud')\n• Yeni model indirmek için: ollama pull %s", model, model)
+		}
 		return "", fmt.Errorf("Ollama HTTP %d: %s", resp.StatusCode, string(b))
 	}
 

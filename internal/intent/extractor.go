@@ -63,6 +63,11 @@ func NewExtractor(cfg ExtractorConfig) *Extractor {
 // Extract sends the user's input to Ollama and returns a validated IntentResult.
 // Retries up to MaxRetries on parse/validation failures.
 func (e *Extractor) Extract(userInput string) (*IntentResult, error) {
+	// First check fast deterministic local match (works offline, 0ms, no Ollama needed)
+	if match := TryLocalMatch(userInput); match != nil {
+		return match, nil
+	}
+
 	var lastErr error
 
 	for attempt := 0; attempt <= e.config.MaxRetries; attempt++ {
@@ -74,8 +79,8 @@ func (e *Extractor) Extract(userInput string) (*IntentResult, error) {
 
 		// Don't retry on connection/timeout errors — they won't resolve
 		if isConnectionError(err) {
-			return nil, fmt.Errorf("Ollama connection failed: %w\n\nMake sure Ollama is running:\n  ollama serve\n\nTips:\n  - Increase timeout: taanos config set ollama.timeout 120s\n  - Use a cloud model: taanos model gemma4:31b-cloud\n  - Use a smaller model: taanos model tinyllama\n\nEndpoint: %s",
-				err, e.config.Endpoint)
+			return nil, fmt.Errorf("⚠️  Ollama servisine bağlanılamadı (%s)\n\nArka planda Ollama çalışmıyor veya erişilemiyor:\n  • Yerel modeli başlatmak için: ollama serve\n  • Model yapılandırması: taanos model <isim>\n  • İlk kurulum sihirbazı: taanos init\n\n💡 İpucu: Temel sistem komutları ('update', 'install <paket>', 'disk', 'ram', 'kaldır', 'sistemi güncelle' vb.) Ollama olmadan da 0ms içinde doğrudan çalışır.",
+				e.config.Endpoint)
 		}
 	}
 
@@ -144,6 +149,9 @@ func (e *Extractor) doExtract(userInput string, attempt int) (*IntentResult, err
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("⚠️  '%s' modeli Ollama içinde bulunamadı (HTTP 404).\n\n• Yüklü modelleri listelemek için: taanos model\n• Model değiştirmek için: taanos model <isim> (örn: 'taanos model gemma4:31b-cloud')\n• Yeni model indirmek için: ollama pull %s", e.config.Model, e.config.Model)
+		}
 		return nil, fmt.Errorf("Ollama returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
