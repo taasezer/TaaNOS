@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/taasezer/TaaNOS/internal/ollama"
 )
 
 // chatRequest is a simple Ollama generate request for conversational mode.
@@ -74,7 +76,15 @@ func Chat(endpoint, model, userInput string, timeout time.Duration) (string, err
 }
 
 // ChatWithHistory sends a message with conversation context.
+// Automatically auto-starts Ollama daemon if not running.
 func ChatWithHistory(endpoint, model, userInput string, history []ConversationEntry, timeout time.Duration) (string, error) {
+	ep := ollama.NormalizeEndpoint(endpoint)
+
+	// Ensure Ollama daemon is running
+	if !ollama.IsRunning(ep) {
+		_ = ollama.EnsureRunning(ep)
+	}
+
 	prompt := BuildConversationPrompt(history, userInput)
 
 	reqBody := chatRequest{
@@ -94,11 +104,18 @@ func ChatWithHistory(endpoint, model, userInput string, history []ConversationEn
 	}
 
 	client := &http.Client{Timeout: timeout}
-	resp, err := client.Post(endpoint+"/api/generate", "application/json", bytes.NewReader(body))
+	resp, err := client.Post(ep+"/api/generate", "application/json", bytes.NewReader(body))
+	if err != nil {
+		// If connection failed, trigger EnsureRunning and retry once
+		if startErr := ollama.EnsureRunning(ep); startErr == nil {
+			resp, err = client.Post(ep+"/api/generate", "application/json", bytes.NewReader(body))
+		}
+	}
+
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "refused") || strings.Contains(errStr, "connectex") || strings.Contains(errStr, "connection reset") {
-			return "", fmt.Errorf("⚠️  Ollama servisine bağlanılamadı (%s)\n\nOllama arka planda çalışmıyor olabilir:\n  • Ollama'yı başlatmak için: 'ollama serve' veya 'taanos init'\n  • Not: Sistem komutları (update, install <paket>, disk, ram, kaldır vb.) Ollama olmadan da 0ms içinde çalışır.", endpoint)
+			return "", fmt.Errorf("⚠️  Ollama servisine bağlanılamadı (%s)\n\nOllama arka planda çalışmıyor olabilir:\n  • Ollama'yı başlatmak için: 'ollama serve' veya 'taanos init'\n  • Not: Sistem komutları (update, install <paket>, disk, ram, kaldır vb.) Ollama olmadan da 0ms içinde çalışır.", ep)
 		}
 		return "", fmt.Errorf("Ollama connection failed: %w", err)
 	}

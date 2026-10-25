@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/taasezer/TaaNOS/internal/ollama"
 	"gopkg.in/yaml.v3"
 )
 
@@ -23,7 +24,7 @@ func Default() *Config {
 		Theme:          "taaos",
 		PackageManager: "auto",
 		Ollama: OllamaConfig{
-			Endpoint:   "http://localhost:11434",
+			Endpoint:   "http://127.0.0.1:11434",
 			Model:      "auto",
 			Timeout:    120 * time.Second,
 			MaxRetries: 1,
@@ -54,12 +55,16 @@ func Default() *Config {
 }
 
 // AutoDetectModel verifies if the configured Ollama model is available.
+// It ensures Ollama is running if installed, then checks active models.
 // If the model is "auto", "llama3.2" (legacy mock default), empty, or not found locally:
 // it detects and sets the first available local model from Ollama.
 // If Ollama is offline or has no models, it sets "offline (0ms)".
 func AutoDetectModel(cfg *Config) {
-	client := &http.Client{Timeout: 600 * time.Millisecond}
-	resp, err := client.Get(cfg.Ollama.Endpoint + "/api/tags")
+	ep := ollama.NormalizeEndpoint(cfg.Ollama.Endpoint)
+	_ = ollama.EnsureRunning(ep)
+
+	client := &http.Client{Timeout: 800 * time.Millisecond}
+	resp, err := client.Get(ep + "/api/tags")
 	if err == nil {
 		defer resp.Body.Close()
 		var data struct {

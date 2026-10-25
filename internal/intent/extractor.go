@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/taasezer/TaaNOS/internal/ollama"
 )
 
 // ollamaRequest is the request body for Ollama's /api/generate endpoint.
@@ -68,6 +70,11 @@ func (e *Extractor) Extract(userInput string) (*IntentResult, error) {
 		return match, nil
 	}
 
+	ep := ollama.NormalizeEndpoint(e.config.Endpoint)
+	if !ollama.IsRunning(ep) {
+		_ = ollama.EnsureRunning(ep)
+	}
+
 	var lastErr error
 
 	for attempt := 0; attempt <= e.config.MaxRetries; attempt++ {
@@ -77,10 +84,15 @@ func (e *Extractor) Extract(userInput string) (*IntentResult, error) {
 		}
 		lastErr = err
 
-		// Don't retry on connection/timeout errors — they won't resolve
+		// Attempt auto-recovery of daemon if connection failed
 		if isConnectionError(err) {
+			if startErr := ollama.EnsureRunning(ep); startErr == nil {
+				if recovered, recErr := e.doExtract(userInput, attempt); recErr == nil {
+					return recovered, nil
+				}
+			}
 			return nil, fmt.Errorf("⚠️  Ollama servisine bağlanılamadı (%s)\n\nArka planda Ollama çalışmıyor veya erişilemiyor:\n  • Yerel modeli başlatmak için: ollama serve\n  • Model yapılandırması: taanos model <isim>\n  • İlk kurulum sihirbazı: taanos init\n\n💡 İpucu: Temel sistem komutları ('update', 'install <paket>', 'disk', 'ram', 'kaldır', 'sistemi güncelle' vb.) Ollama olmadan da 0ms içinde doğrudan çalışır.",
-				e.config.Endpoint)
+				ep)
 		}
 	}
 
@@ -128,7 +140,7 @@ func (e *Extractor) doExtract(userInput string, attempt int) (*IntentResult, err
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/api/generate", e.config.Endpoint)
+	url := fmt.Sprintf("%s/api/generate", ollama.NormalizeEndpoint(e.config.Endpoint))
 
 	// Use context-based timeout for the inference request.
 	// This allows the model to load (cold start can take 60s+).

@@ -15,6 +15,7 @@ import (
 
 	"github.com/taasezer/TaaNOS/config"
 	"github.com/taasezer/TaaNOS/internal/logger"
+	"github.com/taasezer/TaaNOS/internal/ollama"
 	"github.com/taasezer/TaaNOS/internal/pipeline"
 	"github.com/taasezer/TaaNOS/internal/setup"
 	"github.com/taasezer/TaaNOS/internal/tui"
@@ -241,6 +242,10 @@ func cmdREPL() {
 		fmt.Fprintf(os.Stderr, "%s\n", newVersionNotice)
 		time.Sleep(1 * time.Second)
 	}
+
+	go func() {
+		_ = ollama.EnsureRunning(cfg.Ollama.Endpoint)
+	}()
 
 	m := tui.New(cfg, log)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
