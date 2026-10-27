@@ -145,20 +145,85 @@ var (
 			Foreground(lipgloss.Color("#333333"))
 )
 
-// taanosLogo builds a sleek, high-tech Rosso Corsa logo
-func taanosLogo() string {
-	c1 := lipgloss.NewStyle().Foreground(lipgloss.Color("#D40000")).Bold(true)
-	c2 := lipgloss.NewStyle().Foreground(lipgloss.Color("#E6EDF3")).Bold(true)
-	c3 := lipgloss.NewStyle().Foreground(lipgloss.Color("#8B949E"))
-	return fmt.Sprintf("%s  %s\n%s  %s\n%s  %s",
-		c1.Render("████████╗"), c2.Render("TaaNOS"),
-		c1.Render("╚══██╔══╝"), c3.Render("Deterministic AI Ops"),
-		c1.Render("   ██║   "), dimStyle.Render("System & Kernel Engine"),
-	)
+// capybara builds a vibrant, high-contrast colored capybara mascot logo
+func capybara() string {
+	colors := map[rune]lipgloss.TerminalColor{
+		'D': lipgloss.Color("#6C584C"), // Visible warm dark outline (visible on dark backgrounds)
+		'B': lipgloss.Color("#C67D3B"), // Rich capybara brown body
+		'L': lipgloss.Color("#F4A261"), // Bright golden-tan snout & ears
+		'_': lipgloss.NoColor{},        // Transparent
+	}
+
+	raw := `
+⬜⬜⬜⬜⬛⬛⬜⬜⬜⬜⬜⬜⬜⬜
+⬜⬜⬜⬛🟫🟫⬛⬛⬛⬛⬛⬜⬜⬜
+⬜⬜⬜⬛🟧🟫⬛🟫🟫🟫🟧⬛⬜⬜
+⬜⬜⬛🟫🟫🟫🟫⬛🟫🟫🟧⬛⬜⬜
+⬜⬛🟫🟫🟫🟫🟫🟫🟫🟫🟧⬛⬜⬜
+⬛🟫🟫🟧🟫🟫🟫🟫🟫🟫⬛⬜⬜⬜
+⬛🟫🟫🟫🟫🟫🟫🟫🟫🟫⬛⬜⬜⬜
+⬛🟫🟫🟧🟫🟫🟫🟫🟫🟫⬛⬜⬜⬜
+⬛🟫🟫🟧🟫🟧🟫🟫🟫⬛⬜⬜⬜⬜
+⬜⬛🟫🟫⬛⬛🟫🟧🟫⬛⬜⬜⬜⬜`
+
+	raw = strings.Trim(raw, "\n\r")
+	lines := strings.Split(raw, "\n")
+	for i := range lines {
+		lines[i] = strings.ReplaceAll(lines[i], "⬜", "_")
+		lines[i] = strings.ReplaceAll(lines[i], "⬛", "D")
+		lines[i] = strings.ReplaceAll(lines[i], "🟫", "B")
+		lines[i] = strings.ReplaceAll(lines[i], "🟧", "L")
+	}
+
+	var b strings.Builder
+	for i := 0; i < len(lines); i += 2 {
+		topRow := lines[i]
+		botRow := ""
+		if i+1 < len(lines) {
+			botRow = lines[i+1]
+		}
+		for j := 0; j < len(topRow); j++ {
+			topP := rune(topRow[j])
+			botP := rune('_')
+			if j < len(botRow) {
+				botP = rune(botRow[j])
+			}
+
+			if topP == '_' && botP == '_' {
+				b.WriteString(" ")
+				continue
+			}
+
+			style := lipgloss.NewStyle()
+			char := "▀"
+
+			if topP != '_' {
+				style = style.Foreground(colors[topP])
+			} else {
+				char = "▄"
+			}
+			if botP != '_' {
+				if char == "▀" {
+					style = style.Background(colors[botP])
+				} else {
+					style = style.Foreground(colors[botP])
+				}
+			}
+
+			b.WriteString(style.Render(char))
+		}
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // New creates a new REPL model.
 func New(cfg *config.Config, log *logger.Logger) Model {
+	if os.Getenv("COLORTERM") == "" {
+		_ = os.Setenv("COLORTERM", "truecolor")
+	}
+
 	// Initialize and enforce theme (Rosso Corsa TaaOS default)
 	if t, ok := Themes[cfg.Theme]; ok {
 		UpdateStyles(t)
@@ -235,7 +300,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.textInput.Width = min(msg.Width-6, 120)
 		
-		headerHeight := 5 // height of taanosLogo + info + separator
+		headerHeight := 8 // height of capybara + info + separator
 		footerHeight := 3 // prompt line + separator + footer
 		verticalMarginHeight := headerHeight + footerHeight
 		
@@ -612,9 +677,9 @@ func (m Model) View() string {
 
 	w := min(m.width, 100)
 
-	// ── Top header bar (Sleek TaaNOS Header) ──
+	// ── Top header bar (Fixed Capybara Header) ──
 	cwd, _ := os.Getwd()
-	logo := taanosLogo()
+	logo := capybara()
 
 	info := fmt.Sprintf("%s\n%s\n%s",
 		versionStyle.Render("TaaNOS v"+config.Version),
