@@ -124,7 +124,10 @@ func ChatWithHistory(endpoint, model, userInput string, history []ConversationEn
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode == http.StatusNotFound {
-			return "", fmt.Errorf("⚠️  '%s' modeli Ollama içinde bulunamadı (HTTP 404).\n\n• Yüklü modelleri görmek için: model\n• Model değiştirmek için: model <isim> (örn: 'model gemma4:31b-cloud')\n• Yeni model indirmek için: ollama pull %s", model, model)
+			return "", fmt.Errorf("⚠️  '%s' modeli Ollama içinde bulunamadı (HTTP 404).\n\n• Yüklü modelleri görmek için: model\n• Model değiştirmek için: model <isim>\n• Yeni model indirmek için: ollama pull %s", model, model)
+		}
+		if resp.StatusCode == http.StatusUnauthorized {
+			return "", fmt.Errorf("⚠️  '%s' bulut modeli için Ollama oturumu gerekiyor (HTTP 401 Unauthorized).\n\n• Bulut modelini kullanmak için terminalde oturum açın: ollama signin\n• Veya çevrimdışı yerel bir model kullanın: ollama pull llama3.2 && taanos model llama3.2", model)
 		}
 		return "", fmt.Errorf("Ollama HTTP %d: %s", resp.StatusCode, string(b))
 	}

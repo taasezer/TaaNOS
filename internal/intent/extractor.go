@@ -84,6 +84,11 @@ func (e *Extractor) Extract(userInput string) (*IntentResult, error) {
 		}
 		lastErr = err
 
+		// Do not retry on missing model (404) or cloud auth error (401)
+		if strings.Contains(err.Error(), "HTTP 404") || strings.Contains(err.Error(), "HTTP 401") {
+			return nil, err
+		}
+
 		// Attempt auto-recovery of daemon if connection failed
 		if isConnectionError(err) {
 			if startErr := ollama.EnsureRunning(ep); startErr == nil {
@@ -162,7 +167,10 @@ func (e *Extractor) doExtract(userInput string, attempt int) (*IntentResult, err
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("⚠️  '%s' modeli Ollama içinde bulunamadı (HTTP 404).\n\n• Yüklü modelleri listelemek için: taanos model\n• Model değiştirmek için: taanos model <isim> (örn: 'taanos model gemma4:31b-cloud')\n• Yeni model indirmek için: ollama pull %s", e.config.Model, e.config.Model)
+			return nil, fmt.Errorf("⚠️  '%s' modeli Ollama içinde bulunamadı (HTTP 404).\n\n• Yüklü modelleri listelemek için: taanos model\n• Model değiştirmek için: taanos model <isim>\n• Yeni model indirmek için: ollama pull %s", e.config.Model, e.config.Model)
+		}
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("⚠️  '%s' bulut modeli için Ollama oturumu gerekiyor (HTTP 401 Unauthorized).\n\n• Bulut modelini kullanmak için terminalde oturum açın: ollama signin\n• Veya çevrimdışı yerel bir model kullanın: ollama pull llama3.2 && taanos model llama3.2", e.config.Model)
 		}
 		return nil, fmt.Errorf("Ollama returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
